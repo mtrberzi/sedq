@@ -1,0 +1,18 @@
+#ifndef _EXPRESSION_H_
+#define _EXPRESSION_H_
+
+#include <cstdint>
+
+class Expression {
+public:
+    Expression() {}
+    virtual ~Expression() {}
+
+    virtual bool is_concrete() = 0;
+    /*
+     * Note that if !is_concrete(), the return value is undefined.
+     */
+    virtual uint32_t get_value() = 0;
+};
+
+#endif // _EXPRESSION_H_
