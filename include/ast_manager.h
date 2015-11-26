@@ -7,14 +7,16 @@
 
 class ASTManager {
 public:
-    ASTManager();
-    virtual ~ASTManager();
+    ASTManager() : m_varID(0) {}
+    virtual ~ASTManager() {}
 
     // ground terms
     virtual Expression * mk_byte(uint8_t val) = 0;
+    virtual Expression * mk_halfword(uint16_t val) = 0;
     virtual Expression * mk_var(std::string name, unsigned int nBits) = 0;
     Expression * mk_var(unsigned int nBits); // generate anonymous uniquely-named variable
     virtual Expression * mk_int(int32_t val) = 0;
+    virtual Expression * mk_bool(bool val) = 0;
 
     // boolean terms
     virtual Expression * mk_and(Expression * arg0, Expression * arg1) = 0;
@@ -57,12 +59,14 @@ protected:
 
 class ASTManager_SMT2 : public ASTManager {
 public:
-    ASTManager_SMT2();
-    virtual ~ASTManager_SMT2();
+    ASTManager_SMT2() {}
+    virtual ~ASTManager_SMT2() {}
 
     Expression * mk_byte(uint8_t val);
+    Expression * mk_halfword(uint16_t val);
     Expression * mk_var(std::string name, unsigned int nBits);
     Expression * mk_int(int32_t val);
+    Expression * mk_bool(bool val);
 
     // boolean terms
     Expression * mk_and(Expression * arg0, Expression * arg1);

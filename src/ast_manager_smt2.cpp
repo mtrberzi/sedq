@@ -205,12 +205,20 @@ Expression * ASTManager_SMT2::mk_byte(uint8_t val) {
     return new ByteConstant(val);
 }
 
+Expression * ASTManager_SMT2::mk_halfword(uint16_t val) {
+    return new HalfwordConstant(val);
+}
+
 Expression * ASTManager_SMT2::mk_var(std::string name, unsigned int nBits) {
     return new BitVectorVariable(name, nBits);
 }
 
 Expression * ASTManager_SMT2::mk_int(int32_t val) {
     return new IntegerConstant(val);
+}
+
+Expression * ASTManager_SMT2::mk_bool(bool val) {
+    return new BooleanConstant(val);
 }
 
 Expression * ASTManager_SMT2::mk_and(Expression * arg0, Expression * arg1) {
