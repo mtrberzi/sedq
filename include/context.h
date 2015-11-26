@@ -5,8 +5,10 @@
 #include "expression.h"
 #include "ast_manager.h"
 
-typedef void (*FCPUWrite) (uint8_t bank, uint16_t addr, Expression * val);
-typedef Expression* (*FCPURead) (uint8_t bank, uint16_t addr);
+class Context;
+
+typedef void (*FCPUWrite) (Context & ctx, uint8_t bank, uint16_t addr, Expression * val);
+typedef Expression* (*FCPURead) (Context & ctx, uint8_t bank, uint16_t addr);
 
 // enum to track which device we're going to step next
 enum EDevice {
@@ -27,6 +29,8 @@ public:
     Context(ASTManager & m, Context * parent);
     virtual ~Context();
 
+    ASTManager & get_manager();
+
     void step();
 
     // CPU
@@ -41,6 +45,10 @@ public:
     Expression * get_cpu_SP();
     Expression * get_cpu_PC();
 
+    Expression ** get_cpu_RAM();
+    Expression *** get_cpu_PRG_pointer();
+    bool * get_cpu_readable();
+    bool * get_cpu_writable();
     Expression * get_cpu_address();
 
 protected:
@@ -58,6 +66,7 @@ protected:
 
     FCPURead m_cpu_read_handler[0x10];
     FCPUWrite m_cpu_write_handler[0x10];
+    Expression ** m_cpu_prg_pointer[0x10];
     bool m_cpu_readable[0x10];
     bool m_cpu_writable[0x10];
 

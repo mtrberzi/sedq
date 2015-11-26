@@ -1,3 +1,4 @@
+#include <iostream>
 #include <cstdlib>
 #include "ast_manager.h"
 #include "context.h"
@@ -13,10 +14,14 @@ int main(int argc, char *argv[]) {
 
     // TODO figure out how to fork contexts
 
-    // this is just a test harness for now
-    unsigned int nSteps = 10;
-    for (unsigned int i = 0; i < nSteps; ++i) {
-        initial_context->step();
+    try {
+        // this is just a test harness for now
+        unsigned int nSteps = 10;
+        for (unsigned int i = 0; i < nSteps; ++i) {
+            initial_context->step();
+        }
+    } catch (const char * msg) {
+        std::cerr << "exception: " << msg << std::endl;
     }
 
     delete initial_context;

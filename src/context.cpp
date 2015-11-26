@@ -4,6 +4,46 @@
 #include "ast_manager.h"
 #include "trace.h"
 
+static Expression * CPU_ReadRAM(Context & ctx, uint8_t bank, uint16_t addr) {
+    return ctx.get_cpu_RAM()[addr & 0x07FF];
+}
+
+static void CPU_WriteRAM(Context & ctx, uint8_t bank, uint16_t addr, Expression * val) {
+    ctx.get_cpu_RAM()[addr & 0x07FF] = val;
+}
+
+static Expression * PPU_IntRead(Context & ctx, uint8_t bank, uint16_t addr) {
+    // TODO PPU_IntRead
+    return NULL;
+}
+
+static void PPU_IntWrite(Context & ctx, uint8_t bank, uint16_t addr, Expression * val) {
+    // TODO PPU_IntWrite
+}
+
+static Expression * APU_IntRead(Context & ctx, uint8_t bank, uint16_t addr) {
+    // TODO APU_IntRead
+    return NULL;
+}
+
+static void APU_IntWrite(Context & ctx, uint8_t bank, uint16_t addr, Expression * val) {
+    // TODO APU_IntWrite
+}
+
+static Expression * CPU_ReadPRG(Context & ctx, uint8_t bank, uint16_t addr) {
+    if (ctx.get_cpu_readable()[bank]) {
+        return ctx.get_cpu_PRG_pointer()[bank][addr];
+    } else {
+        return ctx.get_manager().mk_byte(0xFF);
+    }
+}
+
+static void CPU_WritePRG(Context & ctx, uint8_t bank, uint16_t addr, Expression * val) {
+    if (ctx.get_cpu_writable()[bank]) {
+        ctx.get_cpu_PRG_pointer()[bank][addr] = val;
+    }
+}
+
 Context::Context(ASTManager & m)
 : m(m), m_parent_context(NULL), m_next_device(EDevice::Device_CPU),
   // CPU
@@ -16,6 +56,23 @@ Context::Context(ASTManager & m)
   m_cpu_address(m.mk_halfword(0)), m_cpu_write_enable(false), m_cpu_data_out(m.mk_byte(0))
 {
     // *** CPU initialization ***
+
+    // CPU read/write handlers
+    for (unsigned int i = 0; i < 0x10; ++i) {
+        m_cpu_read_handler[i] = CPU_ReadPRG;
+        m_cpu_write_handler[i] = CPU_WritePRG;
+        m_cpu_readable[i] = false;
+        m_cpu_writable[i] = false;
+    }
+
+    m_cpu_read_handler[0] = CPU_ReadRAM; m_cpu_write_handler[0] = CPU_WriteRAM;
+    m_cpu_read_handler[1] = CPU_ReadRAM; m_cpu_write_handler[1] = CPU_WriteRAM;
+    m_cpu_read_handler[2] = PPU_IntRead; m_cpu_write_handler[2] = PPU_IntWrite;
+    m_cpu_read_handler[3] = PPU_IntRead; m_cpu_write_handler[3] = PPU_IntWrite;
+
+    // TODO special check for vs. unisystem roms
+
+    m_cpu_read_handler[4] = APU_IntRead; m_cpu_write_handler[4] = APU_IntWrite;
 
     // zero RAM
     for (unsigned int i = 0; i < 0x800; ++i) {
@@ -36,6 +93,10 @@ Context::Context(ASTManager & m, Context * parent)
 
 Context::~Context() {
 
+}
+
+ASTManager & Context::get_manager() {
+    return m;
 }
 
 // TODO front-half read() and write() force a switch to the next peripheral
@@ -96,6 +157,22 @@ Expression * Context::get_cpu_PC() {
         m_cpu_PC = m_parent_context->get_cpu_PC();
     }
     return m_cpu_PC;
+}
+
+Expression ** Context::get_cpu_RAM() {
+    return m_cpu_ram;
+}
+
+bool * Context::get_cpu_readable() {
+    return m_cpu_readable;
+}
+
+bool * Context::get_cpu_writable() {
+    return m_cpu_writable;
+}
+
+Expression *** Context::get_cpu_PRG_pointer() {
+    return m_cpu_prg_pointer;
 }
 
 Expression * Context::get_cpu_address() {
@@ -203,10 +280,10 @@ void Context::step_cpu() {
     Expression * data_in = NULL;
     if (m_cpu_write_enable) {
         // complete write
-        m_cpu_write_handler[(address >> 12) & 0xF]( (address >> 12) & 0xF, (address & 0xFFF), m_cpu_data_out);
+        m_cpu_write_handler[(address >> 12) & 0xF](*this, (address >> 12) & 0xF, (address & 0xFFF), m_cpu_data_out);
     } else {
         // complete read by setting data_in
-        Expression * buf = m_cpu_read_handler[(address >> 12) & 0xF]( (address >> 12) & 0xF, (address & 0xFFF) );
+        Expression * buf = m_cpu_read_handler[(address >> 12) & 0xF](*this, (address >> 12) & 0xF, (address & 0xFFF) );
         if (buf == NULL) {
             // bogus read, give all ones
             data_in = m.mk_byte(0xFF);
