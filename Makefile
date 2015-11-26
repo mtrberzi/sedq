@@ -8,7 +8,10 @@ OBJFILES := $(addprefix obj/,$(notdir $(CPPFILES:.cpp=.o)))
 all: sedq
 
 sedq: $(OBJFILES)
-	$(CPP) $(LDFLAGS) -o $@ $^
+	$(CPP) $(LDFLAGS) -o $@ $^ obj/main.o
+
+obj/main.o: frontend/main.cpp
+	$(CPP) $(CPPFLAGS) -c frontend/main.cpp -o obj/main.o 
 
 obj/%.o: src/%.cpp
 	$(CPP) $(CPPFLAGS) -c -o $@ $<

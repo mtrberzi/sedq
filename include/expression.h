@@ -13,6 +13,7 @@ public:
      * Note that if !is_concrete(), the return value is undefined.
      */
     virtual uint32_t get_value() = 0;
+    virtual uint8_t get_width() = 0;
 };
 
 #endif // _EXPRESSION_H_
