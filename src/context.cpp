@@ -184,6 +184,7 @@ Expression * Context::get_cpu_address() {
 }
 
 void Context::cpu_reset() {
+    TRACE("cpu", tout << "In reset sequence..." << std::endl;);
     switch (m_cpu_state) {
     /*
      * The reset sequence is
@@ -267,6 +268,8 @@ void Context::cpu_reset() {
 }
 
 void Context::step_cpu() {
+    TRACE("cpu", tout << "cpu state = " << std::to_string(m_cpu_state) << std::endl;);
+
     // CPU steps always start by completing the memory access from the previous step
     uint16_t address;
     // deal with the address right away

@@ -15,6 +15,8 @@ enum EDevice {
     Device_CPU,
 };
 
+// TODO enum-to-string
+
 // enum to track the CPU's execution state
 enum ECPUState {
     CPU_Reset1, CPU_Reset2, CPU_Reset3, CPU_Reset4, CPU_Reset5, CPU_Reset6, CPU_Reset7, CPU_Reset8,

@@ -382,6 +382,13 @@ Expression * ASTManager_SMT2::mk_bv_mul(Expression * arg0, Expression * arg1) {
 // TODO potentially create a better constant type in order to perform concat and extract concretely too
 
 Expression * ASTManager_SMT2::mk_bv_concat(Expression * arg0, Expression * arg1) {
+    if (arg0->is_concrete() && arg1->is_concrete()) {
+        uint32_t val0 = arg0->get_value();
+        uint32_t val1 = arg1->get_value();
+        if (arg0->get_width() == 8 && arg1->get_width() == 8) {
+            return new HalfwordConstant((val0 << 8 | val1) & get_bitmask(16));
+        }
+    }
     return new BinaryOp("concat", (SMT2Expression*)arg0, (SMT2Expression*)arg1);
 }
 
