@@ -1,10 +1,14 @@
 #ifndef _TRACE_H_
 #define _TRACE_H_
 
+#define _TRACE
+
 #include <fstream>
+#include <iostream>
 
 #ifdef _TRACE
-extern std::ofstream tout;
+//extern std::ofstream tout;
+extern std::ostream & tout;
 #define TRACE_CODE(CODE) { CODE } ((void) 0 )
 #else
 #define TRACE_CODE(CODE) ((void) 0)

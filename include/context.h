@@ -55,6 +55,8 @@ protected:
     ASTManager & m;
     Context * m_parent_context;
 
+    uint64_t m_step_count;
+
     EDevice m_next_device;
 
     /* *

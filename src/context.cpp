@@ -45,7 +45,7 @@ static void CPU_WritePRG(Context & ctx, uint8_t bank, uint16_t addr, Expression 
 }
 
 Context::Context(ASTManager & m)
-: m(m), m_parent_context(NULL), m_next_device(EDevice::Device_CPU),
+: m(m), m_parent_context(NULL), m_step_count(0), m_next_device(EDevice::Device_CPU),
   // CPU
   m_cpu_state(ECPUState::CPU_Reset1),
   m_cpu_A(m.mk_byte(0)), m_cpu_X(m.mk_byte(0)), m_cpu_Y(m.mk_byte(0)), m_cpu_SP(m.mk_byte(0)), m_cpu_PC(m.mk_halfword(0)),
@@ -114,6 +114,7 @@ void Context::cpu_write(Expression * address, Expression * data) {
 }
 
 void Context::step() {
+    TRACE("step", tout << "step " << std::to_string(m_step_count) << std::endl;);
     switch (m_next_device) {
     case Device_CPU:
     {
@@ -121,7 +122,7 @@ void Context::step() {
         step_cpu();
     } break;
     }
-
+    m_step_count += 1;
 }
 
 Expression * Context::get_cpu_A() {
@@ -271,6 +272,7 @@ void Context::step_cpu() {
     // deal with the address right away
     if (get_cpu_address()->is_concrete()) {
         address = (uint16_t) (get_cpu_address()->get_value() & 0x0000FFFF);
+        TRACE("cpu_memory", tout << "access memory at " << std::to_string(address) << std::endl;);
     } else {
         // oh no. symbolic address.
         // TODO as soon as I figure out how context forks will work

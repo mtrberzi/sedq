@@ -1,18 +1,19 @@
 #include "trace.h"
 
 #ifdef _TRACE
-std::ofstream tout(".sedq-trace");
+//std::ofstream tout(".sedq-trace");
+std::ostream & tout = std::cerr;
 #endif
 
 void close_trace() {
 #ifdef _TRACE
-    tout.close();
+    //tout.close();
 #endif
 }
 
 void open_trace() {
 #ifdef _TRACE
-    tout.open(".z3-trace");
+    //tout.open(".sedq-trace");
 #endif
 }
 
