@@ -389,6 +389,26 @@ void Context::cpu_reset() {
     }
 }
 
+// returns: true iff the addressing mode allows the current instruction to start executing immediately
+bool Context::set_up_addressing_mode() {
+	switch (m_cpu_current_opcode) {
+	case 0xA9: // LDA IMM
+		m_cpu_addressing_mode_state = CPU_AM_IMM; break;
+	default:
+		throw "failed to decode addressing mode";
+	}
+
+	// set up cycle 0 of this addressing mode
+	switch (m_cpu_addressing_mode_state) {
+	case CPU_AM_IMM:
+		// CalcAddr = PC++
+		return true;
+	default:
+		throw "failed to set up addressing mode";
+	}
+
+}
+
 void Context::step_cpu() {
     TRACE("cpu", tout << "cpu state = " << std::to_string(m_cpu_state) << std::endl;);
 
@@ -439,15 +459,27 @@ void Context::step_cpu() {
         m_cpu_PC = m.mk_bv_add(m_cpu_PC, m.mk_halfword(0x0004));
         // check the opcode we just read
         if (data_in->is_concrete()) {
-            // execute the first cycle of that opcode
-            uint8_t opcode = (uint8_t)(data_in->get_value() & 0xFF);
-            TRACE("cpu", tout << "opcode = " << std::to_string(opcode) << std::endl;);
-            // TODO
-            throw "unhandled opcode";
+            m_cpu_current_opcode = (uint8_t)(data_in->get_value() & 0xFF);
+            TRACE("cpu", tout << "opcode = " << std::to_string(m_cpu_current_opcode) << std::endl;);
+            m_cpu_addressing_mode_cycle = 0;
+            m_cpu_state = CPU_AddressingMode;
+            // figure out which addressing mode we want and
+            // do front-half of cycle 0 of this addressing mode
+            bool can_start_instruction = set_up_addressing_mode();
+            if (can_start_instruction) {
+            	// TODO
+            	throw "oops, didn't implement instruction start yet";
+            } else {
+            	throw "oops, didn't do this either";
+            }
         } else {
             throw "oops, symbolic opcode in step_cpu()";
         }
         break;
+    case CPU_AddressingMode:
+    	// TODO
+    	throw "unhandled addressing mode";
+    	break;
     default:
         // TODO throw a proper exception, or do something better than this
         TRACE("err", tout << "Unhandled state " << std::to_string(m_cpu_state) << std::endl;);
