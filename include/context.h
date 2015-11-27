@@ -1,9 +1,15 @@
 #ifndef _CONTEXT_H_
 #define _CONTEXT_H_
 
+#include <fstream>
 #include <cstdint>
 #include "expression.h"
 #include "ast_manager.h"
+
+class Mapper;
+
+#define MAX_PRG_ROM_SIZE (0x800)
+#define MAX_CHR_ROM_SIZE (0x1000)
 
 class Context;
 
@@ -31,6 +37,8 @@ public:
     Context(ASTManager & m, Context * parent);
     virtual ~Context();
 
+    void load_iNES(std::istream & in);
+
     ASTManager & get_manager();
 
     void step();
@@ -53,6 +61,9 @@ public:
     bool * get_cpu_writable();
     Expression * get_cpu_address();
 
+    Expression *** get_cpu_PRG_ROM();
+    uint32_t get_prg_mask_rom();
+
 protected:
     ASTManager & m;
     Context * m_parent_context;
@@ -60,6 +71,22 @@ protected:
     uint64_t m_step_count;
 
     EDevice m_next_device;
+
+    /* *
+     * ******
+     * Mapper
+     * ******
+     * */
+
+    Mapper * m_mapper;
+
+    uint32_t m_mapper_prg_size_rom;
+    uint32_t m_mapper_prg_size_ram;
+    uint32_t m_mapper_chr_size_rom;
+    uint32_t m_mapper_chr_size_ram;
+
+    Expression *** m_PRG_ROM;
+    Expression *** m_CHR_ROM;
 
     /* *
      * ***

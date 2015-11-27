@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include "context.h"
+#include "mapper.h"
 #include "ast_manager.h"
 #include "trace.h"
 
@@ -31,10 +32,11 @@ static void APU_IntWrite(Context & ctx, uint8_t bank, uint16_t addr, Expression 
 }
 
 static Expression * CPU_ReadPRG(Context & ctx, uint8_t bank, uint16_t addr) {
+    TRACE("read_prg", tout << "bank = " << std::to_string(bank) << ", addr = " << std::to_string(addr) << std::endl;);
     if (ctx.get_cpu_readable()[bank]) {
         return ctx.get_cpu_PRG_pointer()[bank][addr];
     } else {
-        return ctx.get_manager().mk_byte(0xFF);
+        return NULL;
     }
 }
 
@@ -92,8 +94,105 @@ Context::Context(ASTManager & m, Context * parent)
 }
 
 Context::~Context() {
-
 }
+
+void Context::load_iNES(std::istream & in) {
+    int i;
+    char Header[16];
+    in.read(Header, 16);
+    // check iNES header signature
+    if (Header[0] != 'N' || Header[1] != 'E' || Header[2] != 'S' || Header[3] != '\x1A') {
+        throw "iNES header signature not found";
+    }
+    if ((Header[7] & 0x0C) == 0x04) {
+        throw "header is corrupted by \"DiskDude!\"";
+    }
+    if ((Header[7] & 0x0C) == 0x0C) {
+        throw "header format not recognized";
+    }
+
+    uint8_t ines_PRGsize = Header[4];
+    uint8_t ines_CHRsize = Header[5];
+    TRACE("ines", tout << "PRG size = " << (ines_PRGsize<<4) << "KB, CHR size = " << std::to_string((ines_CHRsize<<3)) << "KB" << std::endl;);
+    uint8_t ines_mapper_num = ((Header[6] & 0xF0) >> 4) | (Header[7] & 0xF0);
+    TRACE("ines", tout << "mapper #" << std::to_string(ines_mapper_num) << std::endl;);
+    uint8_t ines_flags = (Header[6] & 0x0F) | ((Header[7] & 0x0F) << 4);
+
+    bool ines2 = false;
+    if ((Header[7] & 0x0C) == 0x08) {
+        ines2 = true;
+        throw "NES 2.0 ROM image detected; not yet supported...";
+    } else {
+        for (unsigned int i = 8; i < 0x10; ++i) {
+            if (Header[i] != 0) {
+                throw "unrecognized data found in header";
+            }
+        }
+    }
+    if (ines_flags & 0x04) {
+        throw "trained ROMs are not supported";
+    }
+
+    m_mapper_prg_size_rom = ines_PRGsize * 0x4;
+    m_mapper_chr_size_rom = ines_CHRsize * 0x8;
+
+    m_PRG_ROM = (Expression***)malloc(sizeof(Expression**) * MAX_PRG_ROM_SIZE);
+    for (unsigned int i = 0; i < MAX_PRG_ROM_SIZE; ++i) {
+        m_PRG_ROM[i] = (Expression**)malloc(sizeof(Expression*) * 0x1000);
+    }
+
+    m_CHR_ROM = (Expression***)malloc(sizeof(Expression**) * MAX_CHR_ROM_SIZE);
+    for (unsigned int i = 0; i < MAX_CHR_ROM_SIZE; ++i) {
+        m_CHR_ROM[i] = (Expression**)malloc(sizeof(Expression*) * 0x400);
+    }
+
+    char * PRG_ROM_buffer = new char[m_mapper_prg_size_rom * 0x4000];
+    in.read(PRG_ROM_buffer, m_mapper_prg_size_rom * 0x4000);
+    char * CHR_ROM_buffer = new char[m_mapper_chr_size_rom * 0x2000];
+    in.read(CHR_ROM_buffer, m_mapper_chr_size_rom * 0x2000);
+
+    for (unsigned int bank = 0; bank < m_mapper_prg_size_rom * 4; ++bank) {
+        for (unsigned int pos = 0; pos < 0x1000; ++pos) {
+            unsigned int index = bank * 0x1000 + pos;
+            char val = PRG_ROM_buffer[index];
+            m_PRG_ROM[bank][pos] = get_manager().mk_byte(val);
+        }
+    }
+
+    // TODO initialize CHR ROM
+
+    /*
+    for (unsigned int i = 0; i < m_mapper_prg_size_rom * 0x4000; ++i) {
+        m_PRG_ROM[i] = get_manager().mk_byte(PRG_ROM_buffer[i]);
+    }
+
+    for (unsigned int i = 0; i < m_mapper_chr_size_rom * 0x2000; ++i) {
+        m_CHR_ROM[i] = get_manager().mk_byte(CHR_ROM_buffer[i]);
+    }
+    */
+
+    uint8_t ines_PRGram_size;
+    uint8_t ines_CHRram_size;
+
+    if (ines2) {
+        // TODO PRG/CHR RAM stuff
+    } else {
+        // default to 64KB of PRG RAM and 32KB of CHR RAM
+        ines_PRGram_size = 0x10;
+        ines_CHRram_size = 0x20;
+    }
+
+    // load mapper
+    m_mapper = get_mapper(ines_mapper_num, ines_flags);
+    m_mapper->load(*this);
+    m_mapper->reset(*this);
+
+    // TODO extra stuff for playchoice-10 and vs. unisystem roms to autoselect palette
+
+    delete[] PRG_ROM_buffer;
+    delete[] CHR_ROM_buffer;
+}
+
 
 ASTManager & Context::get_manager() {
     return m;
@@ -181,6 +280,29 @@ Expression * Context::get_cpu_address() {
         m_cpu_address = m_parent_context->get_cpu_address();
     }
     return m_cpu_address;
+}
+
+Expression *** Context::get_cpu_PRG_ROM() {
+    if (m_parent_context != NULL) {
+        m_PRG_ROM = m_parent_context->get_cpu_PRG_ROM();
+    }
+    return m_PRG_ROM;
+}
+
+static uint32_t getMask (unsigned int maxval){
+    uint32_t result = 0;
+    while (maxval > 0)
+    {
+        result = (result << 1) | 1;
+        maxval >>= 1;
+    }
+    return result;
+}
+
+uint32_t Context::get_prg_mask_rom() {
+ //     NES::PRGMaskROM = NES::getMask(NES::PRGSizeROM - 1) & MAX_PRGROM_MASK;
+    uint32_t mask = getMask(m_mapper_prg_size_rom - 1);
+    return mask & (MAX_PRG_ROM_SIZE - 1);
 }
 
 void Context::cpu_reset() {
@@ -292,9 +414,11 @@ void Context::step_cpu() {
         if (buf == NULL) {
             // bogus read, give all ones
             data_in = m.mk_byte(0xFF);
+            TRACE("cpu_memory", tout << "read failed" << std::endl;);
         } else {
             data_in = buf;
             m_cpu_last_read = buf;
+            CTRACE("cpu_memory", data_in->is_concrete(), tout << "read value " << data_in->get_value() << std::endl;);
         }
     }
 

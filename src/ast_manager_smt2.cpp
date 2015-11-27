@@ -1,6 +1,7 @@
 #include "ast_manager.h"
 #include "expression.h"
 #include <cstdint>
+#include "trace.h"
 
 static inline uint32_t get_bitmask(uint32_t nBits) {
     if (nBits >= 32) {
@@ -123,7 +124,7 @@ public:
     uint32_t get_value() { return m_val; }
     uint8_t get_width() { return 32; }
 protected:
-    uint8_t m_val;
+    int32_t m_val;
 };
 
 class UnaryOp : public SMT2Expression {
@@ -393,6 +394,19 @@ Expression * ASTManager_SMT2::mk_bv_concat(Expression * arg0, Expression * arg1)
 }
 
 Expression * ASTManager_SMT2::mk_bv_extract(Expression * bv, Expression * hi, Expression * lo) {
+    if (bv->is_concrete() && hi->is_concrete() && lo->is_concrete()) {
+        uint32_t bv_val = bv->get_value();
+        int32_t high_bit = (int32_t)hi->get_value();
+        int32_t low_bit = (int32_t)lo->get_value();
+        if (high_bit - low_bit + 1 == 8) {
+            // start by masking out everything above the highest bit
+            uint32_t mask = get_bitmask(high_bit + 1);
+            bv_val &= mask;
+            // then shift down to clear out everything below the lowest bit
+            bv_val >>= low_bit;
+            return new ByteConstant(bv_val);
+        }
+    }
     return new ExtractOp((SMT2Expression*)bv, (SMT2Expression*)hi, (SMT2Expression*)lo);
 }
 
