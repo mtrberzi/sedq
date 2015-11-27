@@ -435,12 +435,22 @@ void Context::step_cpu() {
     case CPU_Reset8:
         cpu_reset(); break;
     case CPU_Decode:
-        // increment instruction pointer
+        // increment program counter
+        m_cpu_PC = m.mk_bv_add(m_cpu_PC, m.mk_halfword(0x0004));
         // check the opcode we just read
-        // execute the first cycle of that opcode
-        // TODO
+        if (data_in->is_concrete()) {
+            // execute the first cycle of that opcode
+            uint8_t opcode = (uint8_t)(data_in->get_value() & 0xFF);
+            TRACE("cpu", tout << "opcode = " << std::to_string(opcode) << std::endl;);
+            // TODO
+            throw "unhandled opcode";
+        } else {
+            throw "oops, symbolic opcode in step_cpu()";
+        }
+        break;
     default:
         // TODO throw a proper exception, or do something better than this
-        throw "Unhandled state" + std::to_string(m_cpu_state);
+        TRACE("err", tout << "Unhandled state " << std::to_string(m_cpu_state) << std::endl;);
+        throw "oops, unhandled state";
     }
 }
