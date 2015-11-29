@@ -115,6 +115,10 @@ protected:
 
     void increment_PC();
 
+    // macros for flags in P
+    void cpu_set_FZ(Expression * test);
+    void cpu_set_FN(Expression * test);
+
     FCPURead m_cpu_read_handler[0x10];
     FCPUWrite m_cpu_write_handler[0x10];
     Expression ** m_cpu_prg_pointer[0x10];

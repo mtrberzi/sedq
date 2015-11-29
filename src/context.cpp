@@ -396,18 +396,26 @@ void Context::instruction_fetch() {
 // returns: true iff the addressing mode allows the current instruction to start executing immediately
 bool Context::decode_addressing_mode() {
 	switch (m_cpu_current_opcode) {
-	case 0xA9: // LDA IMM
+	case 0x00: case 0x80: case 0xA0: case 0xC0: case 0xE0: case 0x82: case 0xA2: case 0xC2: case 0xE2:
+	case 0x09: case 0x29: case 0x49: case 0x69: case 0x89: case 0xA9: case 0xC9: case 0xE9:
+	case 0x0B: case 0x2B: case 0x4B: case 0x6B: case 0x8B: case 0xAB: case 0xCB: case 0xEB:
 		m_cpu_addressing_mode_state = CPU_AM_IMM; break;
+	case 0x0C: case 0x2C: case 0x4C: case 0x6C: case 0x8C: case 0xAC: case 0xCC: case 0xEC:
+	case 0x0E: case 0x2E: case 0x4E: case 0x6E: case 0x8E: case 0xAE: case 0xCE: case 0xEE:
+	case 0x0D: case 0x2D: case 0x4D: case 0x6D: case 0x8D: case 0xAD: case 0xCD: case 0xED:
+	case 0x0F: case 0x2F: case 0x4F: case 0x6F: case 0x8F: case 0xAF: case 0xCF: case 0xEF:
+	    m_cpu_addressing_mode_state = CPU_AM_ABS; break;
 	default:
 		throw "failed to decode addressing mode";
 	}
 
-	// set up cycle 0 of this addressing mode
+	// check whether the addressing mode can complete without accessing memory
 	switch (m_cpu_addressing_mode_state) {
 	case CPU_AM_IMM:
+	case CPU_AM_NON:
 		return true;
 	default:
-		throw "failed to decode addressing mode";
+		return false;
 	}
 
 }
@@ -416,13 +424,49 @@ void Context::increment_PC() {
     m_cpu_PC = m.mk_bv_add(get_cpu_PC(), m.mk_halfword(0x0001));
 }
 
+// sets FN = (test >> 7) == 0x01
+void Context::cpu_set_FN(Expression * test) {
+    m_cpu_FN = m.mk_eq(m.mk_bv_logical_right_shift(test, m.mk_byte(7)), m.mk_byte(1));
+}
+
+// sets FZ = (test == 0)
+void Context::cpu_set_FZ(Expression * test) {
+    m_cpu_FZ = m.mk_eq(test, m.mk_byte(0));
+}
+
 void Context::cpu_addressing_mode_cycle() {
     switch (m_cpu_addressing_mode_state) {
     case CPU_AM_IMM:
+        /*
+         * CalcAddr = PC
+         * PC++
+         */
         switch (m_cpu_addressing_mode_cycle) {
         case 0:
             m_cpu_calc_addr = get_cpu_PC();
             increment_PC();
+            // done
+            m_cpu_state = CPU_Execute;
+            break;
+        }
+        break;
+    case CPU_AM_ABS:
+        /*
+         * CalcAddr[7:0] = MemGetCode(PC++)
+         * CalcAddr[15:8] = MemGetCode(PC++)
+         */
+        switch (m_cpu_addressing_mode_cycle) {
+        case 0:
+            cpu_read(get_cpu_PC());
+            increment_PC();
+            break;
+        case 1:
+            m_cpu_calc_addr = m.mk_bv_concat(m.mk_byte(0), m_cpu_last_read);
+            cpu_read(get_cpu_PC());
+            increment_PC();
+            break;
+        case 2:
+            m_cpu_calc_addr = m.mk_bv_concat(m_cpu_last_read, m.mk_bv_extract(m_cpu_calc_addr, m.mk_int(7), m.mk_int(0)));
             // done
             m_cpu_state = CPU_Execute;
             break;
@@ -437,7 +481,7 @@ void Context::cpu_addressing_mode_cycle() {
 
 void Context::cpu_execute() {
     switch (m_cpu_current_opcode) {
-    case 0xA9:
+    case 0xA1: case 0xB1: case 0xA9: case 0xB9: case 0xA5: case 0xB5: case 0xAD: case 0xBD:
         // LDA
         /*
          * A = MemGet(CalcAddr)
@@ -450,9 +494,8 @@ void Context::cpu_execute() {
             break;
         case 1:
             m_cpu_A = m_cpu_last_read;
-            // TODO macros for the flags
-            m_cpu_FZ = m.mk_eq(m_cpu_A, m.mk_byte(0));
-            m_cpu_FN = m.mk_eq(m.mk_bv_logical_right_shift(m_cpu_A, m.mk_byte(7)), m.mk_byte(1));
+            cpu_set_FN(m_cpu_A);
+            cpu_set_FZ(m_cpu_A);
             instruction_fetch();
             break;
         }
@@ -544,13 +587,30 @@ void Context::step_cpu() {
         break;
     case CPU_AddressingMode:
     	cpu_addressing_mode_cycle();
+    	// if the state just became CPU_Execute, follow through into the first cycle of the instruction
+    	if (m_cpu_state == CPU_Execute) {
+    	    m_cpu_execute_cycle = 0;
+    	    cpu_execute();
+    	}
     	break;
     case CPU_Execute:
         cpu_execute();
+        // TODO if the state just became Decode, check for interrupts
         break;
     default:
         // TODO throw a proper exception, or do something better than this
         TRACE("err", tout << "Unhandled state " << std::to_string(m_cpu_state) << std::endl;);
         throw "oops, unhandled state";
     }
+
+    TRACE("cpu",
+        tout << "registers at end of step:" << std::endl;
+        tout << "A = " << (get_cpu_A()->is_concrete() ? std::to_string(get_cpu_A()->get_value()) : "(symbolic)") << std::endl;
+        tout << "X = " << (get_cpu_X()->is_concrete() ? std::to_string(get_cpu_X()->get_value()) : "(symbolic)") << std::endl;
+        tout << "Y = " << (get_cpu_Y()->is_concrete() ? std::to_string(get_cpu_Y()->get_value()) : "(symbolic)") << std::endl;
+        tout << "SP = " << (get_cpu_SP()->is_concrete() ? std::to_string(get_cpu_SP()->get_value()) : "(symbolic)") << std::endl;
+        tout << "PC = " << (get_cpu_PC()->is_concrete() ? std::to_string(get_cpu_PC()->get_value()) : "(symbolic)") << std::endl;
+        // TODO dump flags too
+        );
+
 }

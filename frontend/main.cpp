@@ -52,9 +52,11 @@ int main(int argc, char *argv[]) {
     // set reset vector = 0xC000 (start of PRG)
     prg_rom[0xFFFC - 0xC000] = 0x00;
     prg_rom[0xFFFD - 0xC000] = 0xC0;
-    // LDA #58
-    prg_rom[0xC000 - 0xC000] = 0xA9;
-    prg_rom[0xC001 - 0xC000] = 58;
+    // LDA $C123
+    prg_rom[0xC000 - 0xC000] = 0xAD;
+    prg_rom[0xC001 - 0xC000] = 0x23;
+    prg_rom[0xC002 - 0xC000] = 0xC1;
+    prg_rom[0xC123 - 0xC000] = 99;
 
     char chr_rom[8192 * chr_pages];
 
@@ -66,7 +68,7 @@ int main(int argc, char *argv[]) {
 
     try {
         // this is just a test harness for now
-        unsigned int nSteps = 10;
+        unsigned int nSteps = 7 + 4;
         for (unsigned int i = 0; i < nSteps; ++i) {
             initial_context->step();
         }
