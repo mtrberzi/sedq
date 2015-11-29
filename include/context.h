@@ -26,7 +26,7 @@ enum EDevice {
 // enum to track the CPU's execution state
 enum ECPUState {
     CPU_Reset1, CPU_Reset2, CPU_Reset3, CPU_Reset4, CPU_Reset5, CPU_Reset6, CPU_Reset7, CPU_Reset8,
-    CPU_Decode, CPU_AddressingMode,
+    CPU_Decode, CPU_AddressingMode, CPU_Execute
 };
 
 // enum to track which addressing mode we are executing
@@ -106,8 +106,14 @@ protected:
     ECPUAddressingMode m_cpu_addressing_mode_state;
     uint8_t m_cpu_addressing_mode_cycle;
     uint8_t m_cpu_current_opcode;
-    bool set_up_addressing_mode();
+    uint8_t m_cpu_execute_cycle;
+    void instruction_fetch();
+    bool decode_addressing_mode();
     Expression * m_cpu_calc_addr;
+    void cpu_addressing_mode_cycle();
+    void cpu_execute();
+
+    void increment_PC();
 
     FCPURead m_cpu_read_handler[0x10];
     FCPUWrite m_cpu_write_handler[0x10];

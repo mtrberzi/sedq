@@ -351,11 +351,11 @@ void Context::cpu_reset() {
         // SP -= 1;
         // MemGet(0x100 | SP);
         m_cpu_SP = m.mk_bv_sub(get_cpu_SP(), m.mk_byte(1));
-                cpu_read(m.mk_bv_or(
-                                    m.mk_halfword(0x0100),
-                                    m.mk_bv_concat(
-                                            m.mk_byte(0),
-                                            get_cpu_SP())));
+        cpu_read(m.mk_bv_or(
+                m.mk_halfword(0x0100),
+                m.mk_bv_concat(
+                        m.mk_byte(0),
+                        get_cpu_SP())));
         m_cpu_state = CPU_Reset5;
         break;
     case CPU_Reset5:
@@ -383,14 +383,18 @@ void Context::cpu_reset() {
                         m_cpu_last_read,
                         m.mk_bv_extract(get_cpu_PC(), m.mk_int(7), m.mk_int(0))
                         );
-        cpu_read(get_cpu_PC());
-        m_cpu_state = CPU_Decode;
+        instruction_fetch();
         break;
     }
 }
 
+void Context::instruction_fetch() {
+    cpu_read(get_cpu_PC());
+    m_cpu_state = CPU_Decode;
+}
+
 // returns: true iff the addressing mode allows the current instruction to start executing immediately
-bool Context::set_up_addressing_mode() {
+bool Context::decode_addressing_mode() {
 	switch (m_cpu_current_opcode) {
 	case 0xA9: // LDA IMM
 		m_cpu_addressing_mode_state = CPU_AM_IMM; break;
@@ -401,16 +405,77 @@ bool Context::set_up_addressing_mode() {
 	// set up cycle 0 of this addressing mode
 	switch (m_cpu_addressing_mode_state) {
 	case CPU_AM_IMM:
-		// CalcAddr = PC++
 		return true;
 	default:
-		throw "failed to set up addressing mode";
+		throw "failed to decode addressing mode";
 	}
 
 }
 
+void Context::increment_PC() {
+    m_cpu_PC = m.mk_bv_add(get_cpu_PC(), m.mk_halfword(0x0001));
+}
+
+void Context::cpu_addressing_mode_cycle() {
+    switch (m_cpu_addressing_mode_state) {
+    case CPU_AM_IMM:
+        switch (m_cpu_addressing_mode_cycle) {
+        case 0:
+            m_cpu_calc_addr = get_cpu_PC();
+            increment_PC();
+            // done
+            m_cpu_state = CPU_Execute;
+            break;
+        }
+        break;
+    default:
+        TRACE("cpu", tout << "unhandled addressing mode" << std::endl;);
+        throw "oops, unhandled addressing mode";
+    }
+    m_cpu_addressing_mode_cycle += 1;
+}
+
+void Context::cpu_execute() {
+    switch (m_cpu_current_opcode) {
+    case 0xA9:
+        // LDA
+        /*
+         * A = MemGet(CalcAddr)
+         * FZ = (A == 0)
+         * FN = (A >> 7) == 0x01
+         */
+        switch (m_cpu_execute_cycle) {
+        case 0:
+            cpu_read(m_cpu_calc_addr);
+            break;
+        case 1:
+            m_cpu_A = m_cpu_last_read;
+            // TODO macros for the flags
+            m_cpu_FZ = m.mk_eq(m_cpu_A, m.mk_byte(0));
+            m_cpu_FN = m.mk_eq(m.mk_bv_logical_right_shift(m_cpu_A, m.mk_byte(7)), m.mk_byte(1));
+            instruction_fetch();
+            break;
+        }
+        break;
+    default:
+        TRACE("cpu", tout << "unimplemented instruction " << std::to_string(m_cpu_current_opcode) << std::endl;);
+        throw "oops, unimplemented instruction";
+    }
+    m_cpu_execute_cycle += 1;
+}
+
 void Context::step_cpu() {
-    TRACE("cpu", tout << "cpu state = " << std::to_string(m_cpu_state) << std::endl;);
+    TRACE("cpu",
+            if (m_cpu_state == CPU_Decode) {
+                tout << "cpu state = Decode" << std::endl;
+            } else if (m_cpu_state == CPU_AddressingMode) {
+                tout << "cpu state = AddressingMode" << std::endl;
+            } else if (m_cpu_state == CPU_Execute) {
+                tout << "cpu state = Execute" << std::endl;
+            } else {
+                tout << "cpu state = " << std::to_string(m_cpu_state) << std::endl;
+            }
+            );
 
     // CPU steps always start by completing the memory access from the previous step
     uint16_t address;
@@ -455,31 +520,34 @@ void Context::step_cpu() {
     case CPU_Reset8:
         cpu_reset(); break;
     case CPU_Decode:
-        // increment program counter
-        m_cpu_PC = m.mk_bv_add(m_cpu_PC, m.mk_halfword(0x0004));
         // check the opcode we just read
         if (data_in->is_concrete()) {
+            // do this increment here so that we don't increment it twice if we fork
+            increment_PC();
             m_cpu_current_opcode = (uint8_t)(data_in->get_value() & 0xFF);
             TRACE("cpu", tout << "opcode = " << std::to_string(m_cpu_current_opcode) << std::endl;);
             m_cpu_addressing_mode_cycle = 0;
+            m_cpu_execute_cycle = 0;
             m_cpu_state = CPU_AddressingMode;
-            // figure out which addressing mode we want and
-            // do front-half of cycle 0 of this addressing mode
-            bool can_start_instruction = set_up_addressing_mode();
+            // figure out which addressing mode we want
+            bool can_start_instruction = decode_addressing_mode();
             if (can_start_instruction) {
-            	// TODO
-            	throw "oops, didn't implement instruction start yet";
+                TRACE("cpu", tout << "addressing mode completes in zero cycles" << std::endl;);
+                cpu_addressing_mode_cycle();
+            	cpu_execute();
             } else {
-            	throw "oops, didn't do this either";
+            	cpu_addressing_mode_cycle();
             }
         } else {
             throw "oops, symbolic opcode in step_cpu()";
         }
         break;
     case CPU_AddressingMode:
-    	// TODO
-    	throw "unhandled addressing mode";
+    	cpu_addressing_mode_cycle();
     	break;
+    case CPU_Execute:
+        cpu_execute();
+        break;
     default:
         // TODO throw a proper exception, or do something better than this
         TRACE("err", tout << "Unhandled state " << std::to_string(m_cpu_state) << std::endl;);
