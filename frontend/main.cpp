@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include "ast_manager.h"
 #include "context.h"
+#include "context_scheduler.h"
 #include "trace.h"
 
 // test harness
@@ -42,8 +43,13 @@ int main(int argc, char *argv[]) {
 
     // TODO read arguments
 
-    ASTManager * mgr = new ASTManager_SMT2();
-    Context * initial_context = new Context(*mgr);
+    ASTManager_SMT2 mgr;
+    ContextScheduler scheduler;
+
+    Context * initial_context = new Context(mgr, scheduler);
+    scheduler.add_context(initial_context);
+
+    // most of the following is a test harness for now
 
     // load a fake rom
     uint8_t prg_pages = 1;
@@ -64,13 +70,13 @@ int main(int argc, char *argv[]) {
     std::istrstream rom_input(image, 16 + (16384 * prg_pages) + (8192 * chr_pages));
     initial_context->load_iNES(rom_input);
 
-    // TODO figure out how to fork contexts
+    // set up stopping conditions
+    scheduler.set_maximum_cpu_cycles(7 + 4);
 
+    // run scheduler
     try {
-        // this is just a test harness for now
-        unsigned int nSteps = 7 + 4;
-        for (unsigned int i = 0; i < nSteps; ++i) {
-            initial_context->step();
+        while (scheduler.have_contexts()) {
+            scheduler.run_next_context();
         }
     } catch (const char * msg) {
         std::cerr << "exception: " << msg << std::endl;
@@ -78,7 +84,6 @@ int main(int argc, char *argv[]) {
 
     delete image;
     delete initial_context;
-    delete mgr;
 
     close_trace();
     return EXIT_SUCCESS;

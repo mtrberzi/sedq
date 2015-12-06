@@ -5,8 +5,10 @@
 #include <cstdint>
 #include "expression.h"
 #include "ast_manager.h"
+#include "context_scheduler.h"
 
 class Mapper;
+class ContextScheduler;
 
 #define MAX_PRG_ROM_SIZE (0x800)
 #define MAX_CHR_ROM_SIZE (0x1000)
@@ -41,7 +43,7 @@ enum ECPUAddressingMode {
 class Context {
 public:
     // create "reset" context
-    Context(ASTManager & m);
+    Context(ASTManager & m, ContextScheduler & sch);
     // create inherited context
     Context(ASTManager & m, Context * parent);
     virtual ~Context();
@@ -49,10 +51,15 @@ public:
     void load_iNES(std::istream & in);
 
     ASTManager & get_manager();
+    ContextScheduler & get_scheduler();
+
+    int get_priority() const;
+    bool has_forked() const;
 
     void step();
 
     // CPU
+    uint64_t get_cpu_cycle_count();
     void step_cpu();
     void cpu_reset();
     void cpu_read(Expression * address);
@@ -75,7 +82,9 @@ public:
 
 protected:
     ASTManager & m;
+    ContextScheduler & sch;
     Context * m_parent_context;
+    bool m_has_forked;
 
     uint64_t m_step_count;
 
@@ -102,6 +111,7 @@ protected:
      * CPU
      * ***
      * */
+    uint64_t m_cpu_cycle_count;
     ECPUState m_cpu_state;
     ECPUAddressingMode m_cpu_addressing_mode_state;
     uint8_t m_cpu_addressing_mode_cycle;

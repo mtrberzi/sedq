@@ -3,6 +3,7 @@
 #include "context.h"
 #include "mapper.h"
 #include "ast_manager.h"
+#include "context_scheduler.h"
 #include "trace.h"
 
 static Expression * CPU_ReadRAM(Context & ctx, uint8_t bank, uint16_t addr) {
@@ -46,9 +47,11 @@ static void CPU_WritePRG(Context & ctx, uint8_t bank, uint16_t addr, Expression 
     }
 }
 
-Context::Context(ASTManager & m)
-: m(m), m_parent_context(NULL), m_step_count(0), m_next_device(EDevice::Device_CPU),
+Context::Context(ASTManager & m, ContextScheduler & sch)
+: m(m), sch(sch), m_parent_context(NULL), m_has_forked(false),
+  m_step_count(0), m_next_device(EDevice::Device_CPU),
   // CPU
+  m_cpu_cycle_count(0),
   m_cpu_state(ECPUState::CPU_Reset1),
   m_cpu_A(m.mk_byte(0)), m_cpu_X(m.mk_byte(0)), m_cpu_Y(m.mk_byte(0)), m_cpu_SP(m.mk_byte(0)), m_cpu_PC(m.mk_halfword(0)),
   m_cpu_FC(m.mk_byte(0)), m_cpu_FZ(m.mk_byte(0)), m_cpu_FI(m.mk_byte(0)),
@@ -83,7 +86,7 @@ Context::Context(ASTManager & m)
 }
 
 Context::Context(ASTManager & m, Context * parent)
-: m(m), m_parent_context(parent)
+: m(m), sch(parent->get_scheduler()), m_parent_context(parent), m_has_forked(false)
 {
     // *** CPU initialization ***
 
@@ -196,6 +199,23 @@ void Context::load_iNES(std::istream & in) {
 
 ASTManager & Context::get_manager() {
     return m;
+}
+
+ContextScheduler & Context::get_scheduler() {
+    return sch;
+}
+
+int Context::get_priority() const {
+    // TODO do something here
+    return 0;
+}
+
+bool Context::has_forked() const {
+    return m_has_forked;
+}
+
+uint64_t Context::get_cpu_cycle_count() {
+    return m_cpu_cycle_count;
 }
 
 // TODO front-half read() and write() force a switch to the next peripheral
@@ -612,5 +632,5 @@ void Context::step_cpu() {
         tout << "PC = " << (get_cpu_PC()->is_concrete() ? std::to_string(get_cpu_PC()->get_value()) : "(symbolic)") << std::endl;
         // TODO dump flags too
         );
-
+    m_cpu_cycle_count += 1;
 }
