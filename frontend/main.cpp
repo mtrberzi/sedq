@@ -58,10 +58,13 @@ int main(int argc, char *argv[]) {
     // set reset vector = 0xC000 (start of PRG)
     prg_rom[0xFFFC - 0xC000] = 0x00;
     prg_rom[0xFFFD - 0xC000] = 0xC0;
+    // LDX #$23
+    prg_rom[0xC000 - 0xC000] = 0xA2;
+    prg_rom[0xC001 - 0xC000] = 0x23;
     // LDA $C100,X
-    prg_rom[0xC000 - 0xC000] = 0xBD;
-    prg_rom[0xC001 - 0xC000] = 0x00;
-    prg_rom[0xC002 - 0xC000] = 0xC1;
+    prg_rom[0xC002 - 0xC000] = 0xBD;
+    prg_rom[0xC003 - 0xC000] = 0x00;
+    prg_rom[0xC004 - 0xC000] = 0xC1;
     prg_rom[0xC123 - 0xC000] = 99;
 
     char chr_rom[8192 * chr_pages];
@@ -71,7 +74,7 @@ int main(int argc, char *argv[]) {
     initial_context->load_iNES(rom_input);
 
     // set up stopping conditions
-    scheduler.set_maximum_cpu_cycles(7 + 4);
+    scheduler.set_maximum_cpu_cycles(7 + 2 + 4);
 
     // run scheduler
     try {

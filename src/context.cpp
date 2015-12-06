@@ -577,6 +577,44 @@ void Context::cpu_execute() {
             break;
         }
         break;
+    case 0xA2: case 0xA6: case 0xB6: case 0xAE: case 0xBE:
+        // LDX
+        /*
+         * X = MemGet(CalcAddr)
+         * FZ = (X == 0)
+         * FN = (X >> 7) == 0x01
+         */
+        switch (m_cpu_execute_cycle) {
+        case 0:
+            cpu_read(m_cpu_calc_addr);
+            break;
+        case 1:
+            m_cpu_X = m_cpu_last_read;
+            cpu_set_FN(m_cpu_X);
+            cpu_set_FZ(m_cpu_X);
+            instruction_fetch();
+            break;
+        }
+        break;
+    case 0xA0: case 0xA4: case 0xB4: case 0xAC: case 0xBC:
+        // LDY
+        /*
+         * Y = MemGet(CalcAddr)
+         * FZ = (Y == 0)
+         * FN = (Y >> 7) == 0x01
+         */
+        switch (m_cpu_execute_cycle) {
+        case 0:
+            cpu_read(m_cpu_calc_addr);
+            break;
+        case 1:
+            m_cpu_Y = m_cpu_last_read;
+            cpu_set_FN(m_cpu_Y);
+            cpu_set_FZ(m_cpu_Y);
+            instruction_fetch();
+            break;
+        }
+        break;
     default:
         TRACE("cpu", tout << "unimplemented instruction " << std::to_string(m_cpu_current_opcode) << std::endl;);
         throw "oops, unimplemented instruction";
