@@ -425,6 +425,9 @@ bool Context::decode_addressing_mode() {
 	case 0x0D: case 0x2D: case 0x4D: case 0x6D: case 0x8D: case 0xAD: case 0xCD: case 0xED:
 	case 0x0F: case 0x2F: case 0x4F: case 0x6F: case 0x8F: case 0xAF: case 0xCF: case 0xEF:
 	    m_cpu_addressing_mode_state = CPU_AM_ABS; break;
+	case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xBC: case 0xDC: case 0xFC:
+	case 0x1D: case 0x3D: case 0x5D: case 0x7D: case 0xBD: case 0xDD: case 0xFD:
+	    m_cpu_addressing_mode_state = CPU_AM_ABX; break;
 	default:
 		throw "failed to decode addressing mode";
 	}
@@ -489,6 +492,60 @@ void Context::cpu_addressing_mode_cycle() {
             m_cpu_calc_addr = m.mk_bv_concat(m_cpu_last_read, m.mk_bv_extract(m_cpu_calc_addr, m.mk_int(7), m.mk_int(0)));
             // done
             m_cpu_state = CPU_Execute;
+            break;
+        }
+        break;
+    case CPU_AM_ABX:
+        /*
+        CalcAddrL = MemGetCode(PC++);
+        CalcAddrH = MemGetCode(PC++);
+        bool inc = (CalcAddrL + X) >= 0x100;
+        CalcAddrL += X;
+        if (inc)
+        {
+                MemGet(CalcAddr);
+                CalcAddrH++;
+        }
+        */
+        switch (m_cpu_addressing_mode_cycle) {
+        case 0:
+            cpu_read(get_cpu_PC());
+            increment_PC();
+            break;
+        case 1:
+            m_cpu_calc_addr = m.mk_bv_concat(m.mk_byte(0), m_cpu_last_read);
+            cpu_read(get_cpu_PC());
+            increment_PC();
+            break;
+        case 2:
+        {
+            Expression * CalcAddrL = m.mk_bv_extract(m_cpu_calc_addr, m.mk_int(7), m.mk_int(0));
+            if (CalcAddrL->is_concrete() && get_cpu_X()->is_concrete()) {
+                uint32_t val = CalcAddrL->get_value() + get_cpu_X()->get_value();
+                // set CalcAddr = [LastRead | CalcAddrL + X]
+                m_cpu_calc_addr = m.mk_bv_concat(m_cpu_last_read, m.mk_bv_add(CalcAddrL, get_cpu_X()));
+                if (val >= 0x100) {
+                    // extra cycle required -- waste time reading from this bogus address
+                    cpu_read(m_cpu_calc_addr);
+                } else {
+                    // done -- no extra cycle
+                    m_cpu_state = CPU_Execute;
+                }
+            } else {
+                throw "oops, symbolic CalcAddr or symbolic X register in ABX addressing mode";
+            }
+        }
+            break;
+        case 3:
+        {
+            // this is the extra cycle
+            // throw away the read value, increment CalcAddrH, and we're done
+            Expression * CalcAddrH = m.mk_bv_extract(m_cpu_calc_addr, m.mk_int(15), m.mk_int(8));
+            Expression * CalcAddrL = m.mk_bv_extract(m_cpu_calc_addr, m.mk_int(7), m.mk_int(0));
+            m_cpu_calc_addr = m.mk_bv_concat(m.mk_bv_add(CalcAddrH, m.mk_byte(0x01)), CalcAddrL);
+            // finally done
+            m_cpu_state = CPU_Execute;
+        }
             break;
         }
         break;
