@@ -4,6 +4,14 @@
 #include <cstdint>
 #include <string>
 #include "expression.h"
+#include "model.h"
+
+enum ESolverStatus {
+    SAT,
+    UNSAT,
+    UNKNOWN,
+    ERROR
+};
 
 class ASTManager {
 public:
@@ -51,6 +59,8 @@ public:
     virtual Expression * mk_bv_signed_less_than_or_equal(Expression * arg0, Expression * arg1) = 0;
     virtual Expression * mk_bv_signed_greater_than(Expression * arg0, Expression * arg1) = 0;
     virtual Expression * mk_bv_signed_greater_than_or_equal(Expression * arg0, Expression * arg1) = 0;
+
+    virtual ESolverStatus call_solver(Expression ** assertions, unsigned int nAssertions, Model * model) = 0;
 
 protected:
     uint64_t m_varID; // variable ID counter
@@ -101,6 +111,8 @@ public:
     Expression * mk_bv_signed_less_than_or_equal(Expression * arg0, Expression * arg1);
     Expression * mk_bv_signed_greater_than(Expression * arg0, Expression * arg1);
     Expression * mk_bv_signed_greater_than_or_equal(Expression * arg0, Expression * arg1);
+
+    ESolverStatus call_solver(Expression ** assertions, unsigned int nAssertions, Model * model);
 
 protected:
     std::string get_var_decl(Expression * var);

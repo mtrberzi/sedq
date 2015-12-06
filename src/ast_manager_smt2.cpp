@@ -2,6 +2,8 @@
 #include "expression.h"
 #include <cstdint>
 #include "trace.h"
+#include <set>
+#include <map>
 
 static inline uint32_t get_bitmask(uint32_t nBits) {
     if (nBits >= 32) {
@@ -540,6 +542,37 @@ Expression * ASTManager_SMT2::mk_bv_signed_greater_than_or_equal(Expression * ar
     }
     // fall through
     return new BinaryOp("bvsge", (SMT2Expression*)arg0, (SMT2Expression*)arg1);
+}
+
+ESolverStatus ASTManager_SMT2::call_solver(Expression ** assertions, unsigned int nAssertions, Model * model) {
+    SMT2Expression** smt2assertions = (SMT2Expression**)assertions;
+    std::string instance;
+
+    // start with the usual boilerplate
+    instance = "(set-logic QF_BV)\n";
+
+    // now declare all variables
+    std::set<std::string> unique_variable_names;
+    std::map<std::string, BitVectorVariable*> variables;
+
+    for (unsigned int i = 0; i < nAssertions; ++i) {
+        // TODO collect variables and declare them
+    }
+
+    // turn every expression into an assertion
+    for (unsigned int i = 0; i < nAssertions; ++i) {
+        instance += ((SMT2Expression*)mk_assert(smt2assertions[i]))->to_string();
+        instance += "\n";
+    }
+
+    // here we assume that STP is being used...
+    instance += "(check-sat)\n(exit)\n";
+
+    TRACE("solver", tout << instance << std::endl;);
+
+    // TODO call the solver
+    throw "don't yet know how to invoke the solver";
+
 }
 
 /*
