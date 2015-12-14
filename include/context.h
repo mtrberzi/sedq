@@ -71,6 +71,13 @@ public:
     Expression * get_cpu_SP();
     Expression * get_cpu_PC();
 
+    Expression * get_cpu_FN();
+    Expression * get_cpu_FV();
+    Expression * get_cpu_FD();
+    Expression * get_cpu_FI();
+    Expression * get_cpu_FZ();
+    Expression * get_cpu_FC();
+
     Expression ** get_cpu_RAM();
     Expression *** get_cpu_PRG_pointer();
     bool * get_cpu_readable();
@@ -126,6 +133,7 @@ protected:
     void increment_PC();
 
     // macros for flags in P
+    void cpu_set_FC(Expression * test);
     void cpu_set_FZ(Expression * test);
     void cpu_set_FN(Expression * test);
 

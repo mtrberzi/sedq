@@ -279,6 +279,48 @@ Expression * Context::get_cpu_PC() {
     return m_cpu_PC;
 }
 
+Expression * Context::get_cpu_FN() {
+    if (m_cpu_FN == NULL) {
+        m_cpu_FN = m_parent_context->get_cpu_FN();
+    }
+    return m_cpu_FN;
+}
+
+Expression * Context::get_cpu_FV() {
+    if (m_cpu_FV == NULL) {
+        m_cpu_FV = m_parent_context->get_cpu_FV();
+    }
+    return m_cpu_FV;
+}
+
+Expression * Context::get_cpu_FD() {
+    if (m_cpu_FD == NULL) {
+        m_cpu_FD = m_parent_context->get_cpu_FD();
+    }
+    return m_cpu_FD;
+}
+
+Expression * Context::get_cpu_FI() {
+    if (m_cpu_FI == NULL) {
+        m_cpu_FI = m_parent_context->get_cpu_FI();
+    }
+    return m_cpu_FI;
+}
+
+Expression * Context::get_cpu_FZ() {
+    if (m_cpu_FZ == NULL) {
+        m_cpu_FZ = m_parent_context->get_cpu_FZ();
+    }
+    return m_cpu_FZ;
+}
+
+Expression * Context::get_cpu_FC() {
+    if (m_cpu_FC == NULL) {
+        m_cpu_FC = m_parent_context->get_cpu_FC();
+    }
+    return m_cpu_FC;
+}
+
 Expression ** Context::get_cpu_RAM() {
     return m_cpu_ram;
 }
@@ -447,6 +489,11 @@ void Context::increment_PC() {
     m_cpu_PC = m.mk_bv_add(get_cpu_PC(), m.mk_halfword(0x0001));
 }
 
+// sets FC = (test >= 0)
+void Context::cpu_set_FC(Expression * test) {
+    m_cpu_FC = m.mk_bv_signed_greater_than_or_equal(test, m.mk_byte(0));
+}
+
 // sets FN = (test >> 7) == 0x01
 void Context::cpu_set_FN(Expression * test) {
     m_cpu_FN = m.mk_eq(m.mk_bv_logical_right_shift(test, m.mk_byte(7)), m.mk_byte(1));
@@ -558,6 +605,27 @@ void Context::cpu_addressing_mode_cycle() {
 
 void Context::cpu_execute() {
     switch (m_cpu_current_opcode) {
+    case 0xC1: case 0xD1: case 0xC9: case 0xD9: case 0xC5: case 0xD5: case 0xCD: case 0xDD:
+        // CMP
+        /*
+         * result = A - MemGet(CalcAddr)
+         * FC = (result >= 0)
+         * FZ = (result == 0)
+         * FN = (result >> 7) == 0x01
+         */
+        switch (m_cpu_execute_cycle) {
+        case 0:
+            cpu_read(m_cpu_calc_addr);
+            break;
+        case 1:
+            Expression * result = m.mk_bv_sub(get_cpu_A(), m_cpu_last_read);
+            cpu_set_FC(result);
+            cpu_set_FN(result);
+            cpu_set_FZ(result);
+            instruction_fetch();
+            break;
+        }
+        break;
     case 0xA1: case 0xB1: case 0xA9: case 0xB9: case 0xA5: case 0xB5: case 0xAD: case 0xBD:
         // LDA
         /*
@@ -718,6 +786,10 @@ void Context::step_cpu() {
         throw "oops, unhandled state";
     }
 
+#define PRINT_FLAG(flag, name_set, name_unset) { Expression * tmp = flag; \
+    if (tmp->is_concrete()) {if (tmp->get_value() == 1) tout << name_set << " " ; else tout << name_unset << " ";} \
+    else {tout << name_set << "?";} }
+
     TRACE("cpu",
         tout << "registers at end of step:" << std::endl;
         tout << "A = " << (get_cpu_A()->is_concrete() ? std::to_string(get_cpu_A()->get_value()) : "(symbolic)") << std::endl;
@@ -725,7 +797,17 @@ void Context::step_cpu() {
         tout << "Y = " << (get_cpu_Y()->is_concrete() ? std::to_string(get_cpu_Y()->get_value()) : "(symbolic)") << std::endl;
         tout << "SP = " << (get_cpu_SP()->is_concrete() ? std::to_string(get_cpu_SP()->get_value()) : "(symbolic)") << std::endl;
         tout << "PC = " << (get_cpu_PC()->is_concrete() ? std::to_string(get_cpu_PC()->get_value()) : "(symbolic)") << std::endl;
-        // TODO dump flags too
+        // P: N V . . D I Z C
+        tout << "P = ";
+        PRINT_FLAG(get_cpu_FN(), "N", "n");
+        PRINT_FLAG(get_cpu_FV(), "V", "v");
+        tout << ". ";
+        tout << ". ";
+        PRINT_FLAG(get_cpu_FD(), "D", "d");
+        PRINT_FLAG(get_cpu_FI(), "I", "i");
+        PRINT_FLAG(get_cpu_FZ(), "Z", "z");
+        PRINT_FLAG(get_cpu_FC(), "C", "c");
+        tout << std::endl;
         );
     m_cpu_cycle_count += 1;
 }
