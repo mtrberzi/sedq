@@ -878,6 +878,10 @@ void Context::step_cpu() {
     m_cpu_cycle_count += 1;
 }
 
+std::vector<Expression*> & Context::get_controller1_inputs() {
+    return m_controller1_inputs;
+}
+
 // TODO regenerating controller_bits causes extra vars to be generated -- try to eliminate these if they aren't used
 
 void Context::controller_write(Expression * val) {

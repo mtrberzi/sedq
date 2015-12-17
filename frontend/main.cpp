@@ -101,10 +101,22 @@ int main(int argc, char *argv[]) {
     // simulate a check on (A == 0x41)
     Expression ** assertions = new Expression*[1];
     assertions[0] = mgr.mk_eq(initial_context->get_cpu_A(), mgr.mk_byte(0x41));
-    Model * model;
+    Model * model = new Model();
     ESolverStatus status;
     try {
-        status = mgr.call_solver(assertions, 1, model);
+        status = mgr.call_solver(assertions, 1, &model);
+        if (status == ESolverStatus::SAT) {
+            std::cout << "path found" << std::endl;
+            for (std::vector<Expression*>::iterator it = initial_context->get_controller1_inputs().begin();
+                    it != initial_context->get_controller1_inputs().end(); ++it) {
+                Expression * var = *it;
+                std::string var_name = var->to_string();
+                uint32_t var_val = model->get_variable_value(var_name);
+                std::cout << var_name << " = " << var_val << std::endl;
+            }
+        } else {
+            std::cout << "no path found" << std::endl;
+        }
     } catch (const char * msg) {
         std::cerr << "exception: " << msg << std::endl;
     }

@@ -8,6 +8,8 @@
 #include <cstdio>
 #include <cstring>
 #include <errno.h>
+#include <sstream>
+#include <vector>
 
 static inline uint32_t get_bitmask(uint32_t nBits) {
     if (nBits >= 32) {
@@ -585,7 +587,7 @@ Expression * ASTManager_SMT2::mk_bv_signed_greater_than_or_equal(Expression * ar
     return new BinaryOp("bvsge", (SMT2Expression*)arg0, (SMT2Expression*)arg1);
 }
 
-ESolverStatus ASTManager_SMT2::call_solver(Expression ** assertions, unsigned int nAssertions, Model * model) {
+ESolverStatus ASTManager_SMT2::call_solver(Expression ** assertions, unsigned int nAssertions, Model ** model) {
     SMT2Expression** smt2assertions = (SMT2Expression**)assertions;
     std::string instance;
 
@@ -611,7 +613,7 @@ ESolverStatus ASTManager_SMT2::call_solver(Expression ** assertions, unsigned in
         instance += "\n";
     }
 
-    // here we assume that STP is being used...
+    // here we assume that STP is being used -- for any other solver we could do (get-model)
     instance += "(check-sat)\n(exit)\n";
 
     TRACE("solver", tout << instance << std::endl;);
@@ -681,8 +683,68 @@ ESolverStatus ASTManager_SMT2::call_solver(Expression ** assertions, unsigned in
         close(p_solver_output[0]);
 
         // now interpret solver response
-        TRACE("solver", tout << solver_response << std::endl;);
-        throw "don't know how to read solver response yet";
+        std::stringstream response_stream(solver_response);
+        std::string item;
+        std::vector<std::string> response_tokens;
+        while(std::getline(response_stream, item)) {
+            response_tokens.push_back(item);
+        }
+
+        if (response_tokens.empty()) {
+            TRACE("solver", tout << "error: solver timed out or gave no response" << std::endl;);
+            return ESolverStatus::ERROR;
+        }
+
+        TRACE("solver",
+                for (std::vector<std::string>::iterator it = response_tokens.begin(); it != response_tokens.end(); ++it) {
+                    tout << *it << std::endl;
+                }
+        );
+        // we expect the status to be the very last response line
+        std::string status = response_tokens.at(response_tokens.size() - 1);
+        if (status == "sat") {
+            // the following is so STP-specific that it isn't even funny
+            if (model != NULL) {
+                // ASSERT( foo = 0x01 );
+                for (std::vector<std::string>::iterator it = response_tokens.begin(); it != response_tokens.end(); ++it) {
+                    std::string assertion = *it;
+                    std::stringstream assertion_stream(assertion);
+                    std::string token;
+                    std::vector<std::string> tokens;
+                    while (std::getline(assertion_stream, token, ' ')) {
+                        tokens.push_back(token);
+                    }
+                    if (tokens.empty()) {
+                        continue;
+                    }
+                    if (tokens.at(0) != "ASSERT(") {
+                        continue;
+                    }
+                    std::string var_name = tokens.at(1);
+                    std::string var_val = tokens.at(3);
+                    TRACE("solver", tout << "set " << var_name << " = " << var_val << std::endl;);
+                    // parse var_val, figure out its width
+                    // so far I've seen 0b[binary constant] and 0x[hex constant]
+                    if (var_val.substr(0, 2) == "0x") {
+                        // hex constant
+                        long int val = strtol(var_val.substr(2).c_str(), NULL, 16);
+                        (*model)->add_variable(var_name, val, 4 * (var_val.length() - 2));
+                    } else if (var_val.substr(0, 2) == "0b") {
+                        // binary constant
+                        long int val = strtol(var_val.substr(2).c_str(), NULL, 2);
+                        (*model)->add_variable(var_name, val, (var_val.length() - 2));
+                    } else {
+                        throw "unknown value encoding";
+                    }
+                }
+            }
+            return ESolverStatus::SAT;
+        } else if (status == "unsat") {
+            return ESolverStatus::UNSAT;
+        } else {
+            TRACE("solver", tout << "error: solver returned '" << status << "' but we were hoping for 'sat' or 'unsat'" << std::endl;);
+            return ESolverStatus::ERROR;
+        }
     }
 }
 

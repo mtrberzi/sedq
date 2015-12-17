@@ -93,6 +93,7 @@ public:
     void controller_write(Expression * val);
     Expression * controller_read1();
     Expression * controller_read2();
+    std::vector<Expression*> & get_controller1_inputs();
 
 protected:
     ASTManager & m;
