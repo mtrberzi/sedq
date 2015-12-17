@@ -727,6 +727,28 @@ void Context::cpu_execute() {
             break;
         }
         break;
+    case 0x86: case 0x96: case 0x8E:
+        // STX
+        switch (m_cpu_execute_cycle) {
+        case 0:
+            cpu_write(m_cpu_calc_addr, get_cpu_X());
+            break;
+        case 1:
+            instruction_fetch();
+            break;
+        }
+        break;
+    case 0x84: case 0x94: case 0x8C:
+        // STY
+        switch (m_cpu_execute_cycle) {
+        case 0:
+            cpu_write(m_cpu_calc_addr, get_cpu_Y());
+            break;
+        case 1:
+            instruction_fetch();
+            break;
+        }
+        break;
     default:
         TRACE("cpu", tout << "unimplemented instruction " << std::to_string(m_cpu_current_opcode) << std::endl;);
         throw "oops, unimplemented instruction";
