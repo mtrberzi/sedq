@@ -248,7 +248,7 @@ uint64_t Context::get_cpu_cycle_count() {
 // see MemGet() and MemSet()
 
 Expression * Context::get_cpu_last_read() {
-    return m_cpu_last_read; // TODO make sure this is getting set correctly when an address gets put on the bus
+    return m_cpu_last_read;
 }
 
 void Context::cpu_read(Expression * address) {
@@ -858,11 +858,11 @@ void Context::step_cpu() {
 
     TRACE("cpu",
         tout << "registers at end of step:" << std::endl;
-        tout << "A = " << (get_cpu_A()->is_concrete() ? std::to_string(get_cpu_A()->get_value()) : "(symbolic)") << std::endl;
-        tout << "X = " << (get_cpu_X()->is_concrete() ? std::to_string(get_cpu_X()->get_value()) : "(symbolic)") << std::endl;
-        tout << "Y = " << (get_cpu_Y()->is_concrete() ? std::to_string(get_cpu_Y()->get_value()) : "(symbolic)") << std::endl;
-        tout << "SP = " << (get_cpu_SP()->is_concrete() ? std::to_string(get_cpu_SP()->get_value()) : "(symbolic)") << std::endl;
-        tout << "PC = " << (get_cpu_PC()->is_concrete() ? std::to_string(get_cpu_PC()->get_value()) : "(symbolic)") << std::endl;
+        tout << "A = " << get_cpu_A()->to_string() << std::endl;
+        tout << "X = " << get_cpu_X()->to_string() << std::endl;
+        tout << "Y = " << get_cpu_Y()->to_string() << std::endl;
+        tout << "SP = " << get_cpu_SP()->to_string() << std::endl;
+        tout << "PC = " << get_cpu_PC()->to_string() << std::endl;
         // P: N V . . D I Z C
         tout << "P = ";
         PRINT_FLAG(get_cpu_FN(), "N", "n");

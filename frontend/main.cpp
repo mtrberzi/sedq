@@ -73,6 +73,12 @@ int main(int argc, char *argv[]) {
     prg_rom[0xC007 - 0xC000] = 0x8D;
     prg_rom[0xC008 - 0xC000] = 0x16;
     prg_rom[0xC009 - 0xC000] = 0x40;
+    // read controller 1 button A (input bit 0)
+    // LDA $4016
+    prg_rom[0xC00A - 0xC000] = 0xAD;
+    prg_rom[0xC00B - 0xC000] = 0x16;
+    prg_rom[0xC00C - 0xC000] = 0x40;
+    // this should give us a symbolic value in A
 
     char chr_rom[8192 * chr_pages];
 
@@ -81,7 +87,7 @@ int main(int argc, char *argv[]) {
     initial_context->load_iNES(rom_input);
 
     // set up stopping conditions
-    scheduler.set_maximum_cpu_cycles(7 + 2 + 4 + 2 + 4);
+    scheduler.set_maximum_cpu_cycles(7 + 2 + 4 + 2 + 4 + 4);
 
     // run scheduler
     try {

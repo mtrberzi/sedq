@@ -2,6 +2,7 @@
 #define _EXPRESSION_H_
 
 #include <cstdint>
+#include <string>
 
 class Expression {
 public:
@@ -14,6 +15,8 @@ public:
      */
     virtual uint32_t get_value() = 0;
     virtual uint8_t get_width() = 0;
+
+    virtual std::string to_string() const = 0;
 };
 
 #endif // _EXPRESSION_H_
