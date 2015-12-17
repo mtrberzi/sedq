@@ -98,6 +98,17 @@ int main(int argc, char *argv[]) {
         std::cerr << "exception: " << msg << std::endl;
     }
 
+    // simulate a check on (A == 0x41)
+    Expression ** assertions = new Expression*[1];
+    assertions[0] = mgr.mk_eq(initial_context->get_cpu_A(), mgr.mk_byte(0x41));
+    Model * model;
+    ESolverStatus status;
+    try {
+        status = mgr.call_solver(assertions, 1, model);
+    } catch (const char * msg) {
+        std::cerr << "exception: " << msg << std::endl;
+    }
+
     delete image;
     delete initial_context;
 

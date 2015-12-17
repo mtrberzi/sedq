@@ -19,6 +19,8 @@ public:
     virtual ~SMT2Expression() {}
 
     virtual std::string to_string() const = 0;
+
+    virtual void collect_variables(std::map<std::string, SMT2Expression*> & variables) = 0;
 };
 
 class BitVectorVariable : public SMT2Expression {
@@ -34,6 +36,10 @@ public:
     bool is_concrete() { return false;}
     uint32_t get_value() { return 0; }
     uint8_t get_width() { return m_bits; }
+
+    void collect_variables(std::map<std::string, SMT2Expression*> & variables) {
+        variables[m_name] = this;
+    }
 protected:
     std::string m_name;
     uint8_t m_bits;
@@ -56,6 +62,10 @@ public:
     bool is_concrete() { return true; }
     uint32_t get_value() { if (m_val) return 1 ; else return 0; }
     uint8_t get_width() { return 1; }
+
+    void collect_variables(std::map<std::string, SMT2Expression*> & variables) {
+        // no-op
+    }
 protected:
     bool m_val;
 };
@@ -82,6 +92,10 @@ public:
     bool is_concrete() { return true; }
     uint32_t get_value() { return ((uint32_t)m_val) & 0x000000FF; }
     uint8_t get_width() { return 8; }
+
+    void collect_variables(std::map<std::string, SMT2Expression*> & variables) {
+        // no-op
+    }
 protected:
     uint8_t m_val;
 };
@@ -108,6 +122,10 @@ public:
     bool is_concrete() { return true; }
     uint32_t get_value() { return ((uint32_t)m_val) & 0x0000FFFF; }
     uint8_t get_width() { return 16; }
+
+    void collect_variables(std::map<std::string, SMT2Expression*> & variables) {
+        // no-op
+    }
 protected:
     uint16_t m_val;
 };
@@ -125,6 +143,10 @@ public:
     bool is_concrete() { return true; }
     uint32_t get_value() { return m_val; }
     uint8_t get_width() { return 32; }
+
+    void collect_variables(std::map<std::string, SMT2Expression*> & variables) {
+        // no-op
+    }
 protected:
     int32_t m_val;
 };
@@ -147,6 +169,10 @@ public:
     bool is_concrete() { return false; }
     uint32_t get_value() { return 0; }
     uint8_t get_width() { return 0; }
+
+    void collect_variables(std::map<std::string, SMT2Expression*> & variables) {
+        m_arg->collect_variables( variables);
+    }
 protected:
     std::string m_op;
     SMT2Expression * m_arg;
@@ -172,6 +198,11 @@ public:
     bool is_concrete() { return false; }
     uint32_t get_value() { return 0; }
     uint8_t get_width() { return 0; }
+
+    void collect_variables(std::map<std::string, SMT2Expression*> & variables) {
+        m_arg0->collect_variables(variables);
+        m_arg1->collect_variables(variables);
+    }
 protected:
     std::string m_op;
     SMT2Expression * m_arg0;
@@ -198,6 +229,12 @@ public:
     bool is_concrete() { return false; }
     uint32_t get_value() { return 0; }
     uint8_t get_width() { return 0; }
+
+    void collect_variables(std::map<std::string, SMT2Expression*> & variables) {
+        m_bv->collect_variables(variables);
+        m_hi->collect_variables(variables);
+        m_lo->collect_variables(variables);
+    }
 protected:
     SMT2Expression * m_bv;
     SMT2Expression * m_hi;
@@ -552,11 +589,16 @@ ESolverStatus ASTManager_SMT2::call_solver(Expression ** assertions, unsigned in
     instance = "(set-logic QF_BV)\n";
 
     // now declare all variables
-    std::set<std::string> unique_variable_names;
-    std::map<std::string, BitVectorVariable*> variables;
+    std::map<std::string, SMT2Expression*> variables;
 
     for (unsigned int i = 0; i < nAssertions; ++i) {
-        // TODO collect variables and declare them
+        smt2assertions[i]->collect_variables(variables);
+    }
+
+    for (std::map<std::string, SMT2Expression*>::iterator it = variables.begin(); it != variables.end(); ++it) {
+        SMT2Expression * var = it->second;
+        instance += get_var_decl(var);
+        instance += "\n";
     }
 
     // turn every expression into an assertion
