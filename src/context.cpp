@@ -24,12 +24,36 @@ static void PPU_IntWrite(Context & ctx, uint8_t bank, uint16_t addr, Expression 
 }
 
 static Expression * APU_IntRead(Context & ctx, uint8_t bank, uint16_t addr) {
-    // TODO APU_IntRead
-    return NULL;
+    ASTManager & m = ctx.get_manager();
+    Expression * result = m.mk_byte(0xFF);
+    switch (addr) {
+    /*
+     * In general, controller reads are done like this:
+     *  result = CPU::LastRead & 0xC0
+     *  result |= Controllers::Port#->Read() & 0x19
+     *  result |= Controllers::PortExp->Read#() & 0x1F
+     *  return result
+     */
+    case 0x016:
+        // controller port 1
+        result = m.mk_bv_and(ctx.get_cpu_last_read(), m.mk_byte(0xC0));
+        result = m.mk_bv_or(result, m.mk_bv_and(ctx.controller_read1(), m.mk_byte(0x19)));
+        break;
+    case 0x017:
+        // controller port 2
+        result = m.mk_bv_and(ctx.get_cpu_last_read(), m.mk_byte(0xC0));
+        result = m.mk_bv_or(result, m.mk_bv_and(ctx.controller_read2(), m.mk_byte(0x19)));
+        break;
+    }
+    return result;
 }
 
 static void APU_IntWrite(Context & ctx, uint8_t bank, uint16_t addr, Expression * val) {
-    // TODO APU_IntWrite
+    switch (addr) {
+    case 0x016:
+        ctx.controller_write(val);
+        break;
+    }
 }
 
 static Expression * CPU_ReadPRG(Context & ctx, uint8_t bank, uint16_t addr) {
@@ -49,7 +73,7 @@ static void CPU_WritePRG(Context & ctx, uint8_t bank, uint16_t addr, Expression 
 
 Context::Context(ASTManager & m, ContextScheduler & sch)
 : m(m), sch(sch), m_parent_context(NULL), m_has_forked(false),
-  m_step_count(0), m_next_device(EDevice::Device_CPU),
+  m_step_count(0), m_next_device(EDevice::Device_CPU), m_frame_number(0),
   // CPU
   m_cpu_cycle_count(0),
   m_cpu_state(ECPUState::CPU_Reset1),
@@ -57,6 +81,8 @@ Context::Context(ASTManager & m, ContextScheduler & sch)
   m_cpu_FC(m.mk_byte(0)), m_cpu_FZ(m.mk_byte(0)), m_cpu_FI(m.mk_byte(0)),
   m_cpu_FD(m.mk_byte(0)), m_cpu_FV(m.mk_byte(0)), m_cpu_FN(m.mk_byte(0)),
   m_cpu_last_read(m.mk_byte(0)),
+  // Controllers
+  m_controller1_bits(NULL), m_controller1_bit_ptr(0), m_controller1_strobe(false), m_controller1_seqno(0),
   // start the read for Reset1
   m_cpu_address(m.mk_halfword(0)), m_cpu_write_enable(false), m_cpu_data_out(m.mk_byte(0))
 {
@@ -220,6 +246,10 @@ uint64_t Context::get_cpu_cycle_count() {
 
 // TODO front-half read() and write() force a switch to the next peripheral
 // see MemGet() and MemSet()
+
+Expression * Context::get_cpu_last_read() {
+    return m_cpu_last_read; // TODO make sure this is getting set correctly when an address gets put on the bus
+}
 
 void Context::cpu_read(Expression * address) {
     m_cpu_address = address;
@@ -683,6 +713,20 @@ void Context::cpu_execute() {
             break;
         }
         break;
+    case 0x81: case 0x91: case 0x99: case 0x85: case 0x95: case 0x8D: case 0x9D:
+        // STA
+        /*
+         * MemSet(CalcAddr, A)
+         */
+        switch (m_cpu_execute_cycle) {
+        case 0:
+            cpu_write(m_cpu_calc_addr, get_cpu_A());
+            break;
+        case 1:
+            instruction_fetch();
+            break;
+        }
+        break;
     default:
         TRACE("cpu", tout << "unimplemented instruction " << std::to_string(m_cpu_current_opcode) << std::endl;);
         throw "oops, unimplemented instruction";
@@ -810,4 +854,59 @@ void Context::step_cpu() {
         tout << std::endl;
         );
     m_cpu_cycle_count += 1;
+}
+
+// TODO regenerating controller_bits causes extra vars to be generated -- try to eliminate these if they aren't used
+
+void Context::controller_write(Expression * val) {
+    TRACE("controller", tout << "write controllers" << std::endl;);
+    if (val->is_concrete()) {
+        bool strobe = val->get_value() & 1;
+        if (m_controller1_strobe || strobe) {
+            m_controller1_strobe = strobe;
+            m_controller1_bits = controller_mk_var(1);
+            m_controller1_bit_ptr = 0;
+        }
+    } else {
+        throw "oops, symbolic value in controller_write()";
+    }
+}
+
+// TODO allow playback of concrete controller inputs (this requires knowing when frames happen)
+
+Expression * Context::controller_read1() {
+    TRACE("controller", tout << "read controller 1" << std::endl;);
+    Expression * result;
+    if (m_controller1_strobe) {
+        m_controller1_bits = controller_mk_var(1);
+        m_controller1_bit_ptr = 0;
+        result = m.mk_bv_and(m_controller1_bits, m.mk_byte(0x01));
+    } else {
+        if (m_controller1_bit_ptr < 8) {
+            result = m.mk_bv_logical_right_shift(m.mk_bv_and(m_controller1_bits, m.mk_byte(1 << m_controller1_bit_ptr)),
+                    m.mk_byte(m_controller1_bit_ptr));
+            m_controller1_bit_ptr += 1;
+        } else {
+            result = m.mk_byte(1);
+        }
+    }
+    return result;
+}
+
+Expression * Context::controller_read2() {
+    // TODO
+    return NULL;
+}
+
+Expression * Context::controller_mk_var(int controller_number) {
+    std::string var_name = "controller" + std::to_string(controller_number) + "_frame" + std::to_string(m_frame_number);
+    if (controller_number == 1) {
+        var_name += "_" + std::to_string(m_controller1_seqno);
+        m_controller1_seqno += 1;
+    } else if (controller_number == 2) {
+        // TODO seqno 2
+    }
+    Expression * var = m.mk_var(var_name, 8);
+    m_controller1_inputs.push_back(var);
+    return var;
 }

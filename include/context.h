@@ -3,6 +3,7 @@
 
 #include <fstream>
 #include <cstdint>
+#include <vector>
 #include "expression.h"
 #include "ast_manager.h"
 #include "context_scheduler.h"
@@ -83,9 +84,15 @@ public:
     bool * get_cpu_readable();
     bool * get_cpu_writable();
     Expression * get_cpu_address();
+    Expression * get_cpu_last_read();
 
     Expression *** get_cpu_PRG_ROM();
     uint32_t get_prg_mask_rom();
+
+    // Controller
+    void controller_write(Expression * val);
+    Expression * controller_read1();
+    Expression * controller_read2();
 
 protected:
     ASTManager & m;
@@ -96,6 +103,8 @@ protected:
     uint64_t m_step_count;
 
     EDevice m_next_device;
+
+    uint32_t m_frame_number;
 
     /* *
      * ******
@@ -171,6 +180,25 @@ protected:
     Expression * m_cpu_data_out;
 
     Expression * m_cpu_ram[0x800];
+
+    /* *
+     * ***********
+     * Controllers
+     * ***********
+     * */
+
+    // for now we assume that the only thing we'll ever hook up is a standard controller.
+    // I don't want to think about the consequences of symbolically simulating the zapper, for instance...
+
+    // standard controller reads buttons in the order A B Select Start Up Down Left Right
+
+    Expression * m_controller1_bits;
+    uint8_t m_controller1_bit_ptr;
+    bool m_controller1_strobe;
+    uint32_t m_controller1_seqno;
+    std::vector<Expression*> m_controller1_inputs;
+
+    Expression * controller_mk_var(int controller_number);
 
 };
 

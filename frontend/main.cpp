@@ -58,12 +58,21 @@ int main(int argc, char *argv[]) {
     // set reset vector = 0xC000 (start of PRG)
     prg_rom[0xFFFC - 0xC000] = 0x00;
     prg_rom[0xFFFD - 0xC000] = 0xC0;
-    // LDA #12
+    // strobe controllers
+    // LDA #1
     prg_rom[0xC000 - 0xC000] = 0xA9;
-    prg_rom[0xC001 - 0xC000] = 12;
-    // CMP #7
-    prg_rom[0xC002 - 0xC000] = 0xC9;
-    prg_rom[0xC003 - 0xC000] = 7;
+    prg_rom[0xC001 - 0xC000] = 1;
+    // STA $4016
+    prg_rom[0xC002 - 0xC000] = 0x8D;
+    prg_rom[0xC003 - 0xC000] = 0x16;
+    prg_rom[0xC004 - 0xC000] = 0x40;
+    // LDA #0
+    prg_rom[0xC005 - 0xC000] = 0xA9;
+    prg_rom[0xC006 - 0xC000] = 0;
+    // STA $4016
+    prg_rom[0xC007 - 0xC000] = 0x8D;
+    prg_rom[0xC008 - 0xC000] = 0x16;
+    prg_rom[0xC009 - 0xC000] = 0x40;
 
     char chr_rom[8192 * chr_pages];
 
@@ -72,7 +81,7 @@ int main(int argc, char *argv[]) {
     initial_context->load_iNES(rom_input);
 
     // set up stopping conditions
-    scheduler.set_maximum_cpu_cycles(7 + 2 + 2);
+    scheduler.set_maximum_cpu_cycles(7 + 2 + 4 + 2 + 4);
 
     // run scheduler
     try {
