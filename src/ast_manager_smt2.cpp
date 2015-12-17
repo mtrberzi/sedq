@@ -4,6 +4,10 @@
 #include "trace.h"
 #include <set>
 #include <map>
+#include <unistd.h>
+#include <cstdio>
+#include <cstring>
+#include <errno.h>
 
 static inline uint32_t get_bitmask(uint32_t nBits) {
     if (nBits >= 32) {
@@ -612,9 +616,74 @@ ESolverStatus ASTManager_SMT2::call_solver(Expression ** assertions, unsigned in
 
     TRACE("solver", tout << instance << std::endl;);
 
-    // TODO call the solver
-    throw "don't yet know how to invoke the solver";
+    int p_solver_input[2];
+    int p_solver_output[2];
+    pid_t pid;
 
+    if (pipe(p_solver_input) == -1 || pipe(p_solver_output) == -1) {
+        TRACE("solver", tout << "failed to create pipe: " << std::strerror(errno) << std::endl;);
+        throw std::strerror(errno);
+    }
+    pid = fork();
+    if (pid == -1) {
+        TRACE("solver", tout << "could not fork solver process: " << std::strerror(errno) << std::endl;);
+        throw std::strerror(errno);
+    } else if (pid == 0) {
+        // child process -- run the solver
+        // close write end of input pipe and read end of output pipe
+        close(p_solver_input[1]);
+        close(p_solver_output[0]);
+        // make stdin the same as the solver input
+        dup2(p_solver_input[0], 0);
+        // make stdout the same as the solver output
+        dup2(p_solver_output[1], 1);
+
+        execlp("stp", "stp", "--print-counterex", "--SMTLIB2", NULL);
+        // if we got here, this is bad
+        perror("solver subprocess");
+        _exit(1);
+    } else {
+        // parent process
+        // close read end of input pipe and write end of output pipe
+        close(p_solver_input[0]);
+        close(p_solver_output[1]);
+        const char * buffer = instance.c_str();
+        size_t bytes_remaining = sizeof(char) * instance.size();
+        while (bytes_remaining > 0) {
+            ssize_t bytes_written = write(p_solver_input[1], buffer, bytes_remaining);
+            if (bytes_written == -1) {
+                // error
+                TRACE("solver", tout << "could not write instance: " << std::strerror(errno) << std::endl;);
+                throw std::strerror(errno);
+            } else {
+                bytes_remaining -= bytes_written;
+                buffer += bytes_written;
+            }
+        }
+        // send EOF
+        close(p_solver_input[1]);
+
+        // read buffer into string
+        char out_buf[2048];
+        std::string solver_response;
+        while(true) {
+            ssize_t bytes_read = read(p_solver_output[0], out_buf, 2048);
+            if (bytes_read == 0) {
+                break;
+            } else if (bytes_read == -1) {
+                // error
+                TRACE("solver", tout << "could not read solver response: " << std::strerror(errno) << std::endl;);
+                throw std::strerror(errno);
+            } else {
+                solver_response.append(out_buf, bytes_read);
+            }
+        }
+        close(p_solver_output[0]);
+
+        // now interpret solver response
+        TRACE("solver", tout << solver_response << std::endl;);
+        throw "don't know how to read solver response yet";
+    }
 }
 
 /*
