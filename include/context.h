@@ -137,8 +137,10 @@ protected:
     void instruction_fetch();
     bool decode_addressing_mode();
     Expression * m_cpu_calc_addr;
+    Expression * m_cpu_branch_offset;
     void cpu_addressing_mode_cycle();
     void cpu_execute();
+    void cpu_branch(Expression * condition);
 
     void increment_PC();
 

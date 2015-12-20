@@ -58,6 +58,20 @@ int main(int argc, char *argv[]) {
     // set reset vector = 0xC000 (start of PRG)
     prg_rom[0xFFFC - 0xC000] = 0x00;
     prg_rom[0xFFFD - 0xC000] = 0xC0;
+
+    // LDA #1
+    prg_rom[0xC000 - 0xC000] = 0xA9;
+    prg_rom[0xC001 - 0xC000] = 1;
+    // BNZ +1
+    prg_rom[0xC002 - 0xC000] = 0xD0;
+    prg_rom[0xC003 - 0xC000] = 1;
+    // BRK
+    prg_rom[0xC004 - 0xC000] = 0x00;
+    // LDA #42
+    prg_rom[0xC005 - 0xC000] = 0xA9;
+    prg_rom[0xC006 - 0xC000] = 42;
+
+    /*
     // strobe controllers
     // LDA #1
     prg_rom[0xC000 - 0xC000] = 0xA9;
@@ -79,6 +93,7 @@ int main(int argc, char *argv[]) {
     prg_rom[0xC00B - 0xC000] = 0x16;
     prg_rom[0xC00C - 0xC000] = 0x40;
     // this should give us a symbolic value in A
+     */
 
     char chr_rom[8192 * chr_pages];
 
@@ -87,7 +102,7 @@ int main(int argc, char *argv[]) {
     initial_context->load_iNES(rom_input);
 
     // set up stopping conditions
-    scheduler.set_maximum_cpu_cycles(7 + 2 + 4 + 2 + 4 + 4);
+    scheduler.set_maximum_cpu_cycles(7 + 2 + 3 + 2);
 
     // run scheduler
     try {
@@ -98,6 +113,7 @@ int main(int argc, char *argv[]) {
         std::cerr << "exception: " << msg << std::endl;
     }
 
+    /*
     // simulate a check on (A == 0x41)
     Expression ** assertions = new Expression*[1];
     assertions[0] = mgr.mk_eq(initial_context->get_cpu_A(), mgr.mk_byte(0x41));
@@ -120,6 +136,7 @@ int main(int argc, char *argv[]) {
     } catch (const char * msg) {
         std::cerr << "exception: " << msg << std::endl;
     }
+    */
 
     delete image;
     delete initial_context;

@@ -497,6 +497,8 @@ bool Context::decode_addressing_mode() {
 	case 0x0D: case 0x2D: case 0x4D: case 0x6D: case 0x8D: case 0xAD: case 0xCD: case 0xED:
 	case 0x0F: case 0x2F: case 0x4F: case 0x6F: case 0x8F: case 0xAF: case 0xCF: case 0xEF:
 	    m_cpu_addressing_mode_state = CPU_AM_ABS; break;
+	case 0x10: case 0x30: case 0x50: case 0x70: case 0x90: case 0xB0: case 0xD0: case 0xF0:
+	    m_cpu_addressing_mode_state = CPU_AM_REL; break;
 	case 0x1C: case 0x3C: case 0x5C: case 0x7C: case 0xBC: case 0xDC: case 0xFC:
 	case 0x1D: case 0x3D: case 0x5D: case 0x7D: case 0xBD: case 0xDD: case 0xFD:
 	    m_cpu_addressing_mode_state = CPU_AM_ABX; break;
@@ -572,6 +574,22 @@ void Context::cpu_addressing_mode_cycle() {
             break;
         }
         break;
+    case CPU_AM_REL:
+        /*
+         * BranchOffset = MemGetCode(PC++)
+         */
+        switch (m_cpu_addressing_mode_cycle) {
+        case 0:
+            cpu_read(get_cpu_PC());
+            increment_PC();
+            break;
+        case 1:
+            m_cpu_branch_offset = m_cpu_last_read;
+            // done
+            m_cpu_state = CPU_Execute;
+            break;
+        }
+        break;
     case CPU_AM_ABX:
         /*
         CalcAddrL = MemGetCode(PC++);
@@ -633,8 +651,125 @@ void Context::cpu_addressing_mode_cycle() {
     m_cpu_addressing_mode_cycle += 1;
 }
 
+void Context::cpu_branch(Expression * condition) {
+    if (condition->is_concrete()) {
+        if (condition->get_value() != 0) {
+            switch (m_cpu_execute_cycle) {
+            case 0:
+                // TODO special interrupt ignoring "bug"
+                cpu_read(get_cpu_PC());
+                break;
+            case 1:
+            {
+                // TODO re-enable interrupts here, or something?
+                /*
+                bool inc = (PCL + BranchOffset) >= 0x100;
+                PCL += BranchOffset;
+                if (BranchOffset & 0x80)
+                {
+                        if (!inc)
+                            {
+                                    MemGet(PC);
+                                PCH--;
+                        }
+                }
+                else
+                    {
+                        if (inc)
+                            {
+                                MemGet(PC);
+                                PCH++;
+                        }
+                }
+        `       */
+                if (m_cpu_branch_offset->is_concrete()) {
+                    uint32_t val = ( get_cpu_PC()->get_value() & 0x00FF ) + m_cpu_branch_offset->get_value();
+                    bool inc = (val >= 0x100);
+                    // PC[7:0] = PC[7:0] + BranchOffset
+                    Expression * PCH = m.mk_bv_extract(get_cpu_PC(), m.mk_int(15), m.mk_int(8));
+                    Expression * PCL = m.mk_bv_extract(get_cpu_PC(), m.mk_int(7), m.mk_int(0));
+                    m_cpu_PC = m.mk_bv_concat(PCH, m.mk_bv_add(PCL, m_cpu_branch_offset));
+                    // decide whether an extra cycle is needed due to page crossing
+                    if (m_cpu_branch_offset->get_value() & 0x80) {
+                        if (!inc) {
+                            // extra cycle
+                            cpu_read(m_cpu_PC);
+                        } else {
+                            // no extra cycle
+                            instruction_fetch();
+                        }
+                    } else {
+                        if (inc) {
+                            // extra cycle
+                            cpu_read(m_cpu_PC);
+                        } else {
+                            // no extra cycle
+                            instruction_fetch();
+                        }
+                    }
+                } else {
+                    throw "oops, symbolic branch offset";
+                }
+                break;
+            } // case 1
+            case 2:
+            {
+                // we can assume m_cpu_branch_offset is concrete
+                // all we have to do is adjust PCH in the appropriate direction
+                Expression * PCH = m.mk_bv_extract(get_cpu_PC(), m.mk_int(15), m.mk_int(8));
+                Expression * PCL = m.mk_bv_extract(get_cpu_PC(), m.mk_int(7), m.mk_int(0));
+                if (m_cpu_branch_offset->get_value() & 0x80) {
+                    // PCH --
+                    m_cpu_PC = m.mk_bv_concat(m.mk_bv_sub(PCH, m.mk_byte(1)), PCL);
+                } else {
+                    // PCH ++
+                    m_cpu_PC = m.mk_bv_concat(m.mk_bv_add(PCH, m.mk_byte(1)), PCL);
+                }
+                instruction_fetch();
+                break;
+            } // case 2
+            }
+        }
+    } else {
+        TRACE("cpu", tout << "symbolic branch: " << condition->to_string() << std::endl;);
+        throw "oops, symbolic branch";
+    }
+}
+
 void Context::cpu_execute() {
     switch (m_cpu_current_opcode) {
+    case 0x90:
+        // BCC
+        cpu_branch(m.mk_not(get_cpu_FC()));
+        break;
+    case 0xB0:
+        // BCS
+        cpu_branch(get_cpu_FC());
+        break;
+    case 0xF0:
+        // BEQ
+        cpu_branch(get_cpu_FZ());
+        break;
+    case 0x30:
+        // BMI
+        cpu_branch(get_cpu_FN());
+        break;
+    case 0xD0:
+        // BNE
+        cpu_branch(m.mk_not(get_cpu_FZ()));
+        break;
+    case 0x10:
+        // BPL
+        cpu_branch(m.mk_not(get_cpu_FN()));
+        break;
+    case 0x50:
+        // BVC
+        cpu_branch(m.mk_not(get_cpu_FV()));
+        break;
+    case 0x70:
+        // BVS
+        cpu_branch(get_cpu_FV());
+        break;
     case 0xC1: case 0xD1: case 0xC9: case 0xD9: case 0xC5: case 0xD5: case 0xCD: case 0xDD:
         // CMP
         /*
