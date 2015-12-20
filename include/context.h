@@ -4,6 +4,7 @@
 #include <fstream>
 #include <cstdint>
 #include <vector>
+#include <map>
 #include "expression.h"
 #include "ast_manager.h"
 #include "context_scheduler.h"
@@ -80,6 +81,8 @@ public:
     Expression * get_cpu_FC();
 
     Expression ** get_cpu_RAM();
+    Expression * cpu_read_ram(uint16_t addr);
+    void cpu_write_ram(uint16_t addr, Expression * value);
     Expression *** get_cpu_PRG_pointer();
     bool * get_cpu_readable();
     bool * get_cpu_writable();
@@ -132,6 +135,7 @@ protected:
     ECPUState m_cpu_state;
     ECPUAddressingMode m_cpu_addressing_mode_state;
     uint8_t m_cpu_addressing_mode_cycle;
+    bool m_cpu_memory_phase;
     uint8_t m_cpu_current_opcode;
     uint8_t m_cpu_execute_cycle;
     void instruction_fetch();
@@ -182,7 +186,9 @@ protected:
     bool m_cpu_write_enable;
     Expression * m_cpu_data_out;
 
-    Expression * m_cpu_ram[0x800];
+    //Expression * m_cpu_ram[0x800];
+    Expression ** m_cpu_ram;
+    std::map<uint16_t, Expression*> m_cpu_ram_copyonwrite;
 
     /* *
      * ***********

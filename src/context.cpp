@@ -7,11 +7,34 @@
 #include "trace.h"
 
 static Expression * CPU_ReadRAM(Context & ctx, uint8_t bank, uint16_t addr) {
-    return ctx.get_cpu_RAM()[addr & 0x07FF];
+    return ctx.cpu_read_ram(addr & 0x07FF);
 }
 
 static void CPU_WriteRAM(Context & ctx, uint8_t bank, uint16_t addr, Expression * val) {
-    ctx.get_cpu_RAM()[addr & 0x07FF] = val;
+    ctx.cpu_write_ram(addr & 0x07FF, val);
+}
+
+Expression * Context::cpu_read_ram(uint16_t addr) {
+    if (m_cpu_ram == NULL) {
+        // check copy-on-write cache, then ask parent
+        std::map<uint16_t, Expression*>::iterator target = m_cpu_ram_copyonwrite.find(addr);
+        if (target == m_cpu_ram_copyonwrite.end()) {
+            return m_parent_context->cpu_read_ram(addr);
+        } else {
+            return target->second;
+        }
+    } else {
+        return m_cpu_ram[addr];
+    }
+}
+
+void Context::cpu_write_ram(uint16_t addr, Expression * value) {
+    if (m_cpu_ram == NULL) {
+        // only write to copy-on-write cache
+        m_cpu_ram_copyonwrite[addr] = value;
+    } else {
+        m_cpu_ram[addr] = value;
+    }
 }
 
 static Expression * PPU_IntRead(Context & ctx, uint8_t bank, uint16_t addr) {
@@ -74,13 +97,19 @@ static void CPU_WritePRG(Context & ctx, uint8_t bank, uint16_t addr, Expression 
 Context::Context(ASTManager & m, ContextScheduler & sch)
 : m(m), sch(sch), m_parent_context(NULL), m_has_forked(false),
   m_step_count(0), m_next_device(EDevice::Device_CPU), m_frame_number(0),
+  m_mapper(NULL),
+  m_mapper_prg_size_ram(0), m_mapper_prg_size_rom(0),
+  m_mapper_chr_size_ram(0), m_mapper_chr_size_rom(0),
+  m_PRG_ROM(NULL), m_CHR_ROM(NULL),
   // CPU
-  m_cpu_cycle_count(0),
-  m_cpu_state(ECPUState::CPU_Reset1),
+  m_cpu_cycle_count(0), m_cpu_pcm_cycles(0), m_cpu_current_opcode(0),
+  m_cpu_state(ECPUState::CPU_Reset1), m_cpu_memory_phase(true),
+  m_cpu_want_nmi(false), m_cpu_want_irq(false),
+  m_cpu_addressing_mode_state(CPU_AM_NON), m_cpu_addressing_mode_cycle(0), m_cpu_execute_cycle(0),
   m_cpu_A(m.mk_byte(0)), m_cpu_X(m.mk_byte(0)), m_cpu_Y(m.mk_byte(0)), m_cpu_SP(m.mk_byte(0)), m_cpu_PC(m.mk_halfword(0)),
   m_cpu_FC(m.mk_byte(0)), m_cpu_FZ(m.mk_byte(0)), m_cpu_FI(m.mk_byte(0)),
   m_cpu_FD(m.mk_byte(0)), m_cpu_FV(m.mk_byte(0)), m_cpu_FN(m.mk_byte(0)),
-  m_cpu_last_read(m.mk_byte(0)),
+  m_cpu_last_read(m.mk_byte(0)), m_cpu_calc_addr(NULL), m_cpu_branch_offset(NULL),
   // Controllers
   m_controller1_bits(NULL), m_controller1_bit_ptr(0), m_controller1_strobe(false), m_controller1_seqno(0),
   // start the read for Reset1
@@ -106,20 +135,46 @@ Context::Context(ASTManager & m, ContextScheduler & sch)
     m_cpu_read_handler[4] = APU_IntRead; m_cpu_write_handler[4] = APU_IntWrite;
 
     // zero RAM
+    m_cpu_ram = new Expression*[0x800];
     for (unsigned int i = 0; i < 0x800; ++i) {
         m_cpu_ram[i] = m.mk_byte(0);
     }
 }
 
 Context::Context(ASTManager & m, Context * parent)
-: m(m), sch(parent->get_scheduler()), m_parent_context(parent), m_has_forked(false)
+: m(m), sch(parent->get_scheduler()), m_parent_context(parent), m_has_forked(false),
+  m_step_count(parent->m_step_count), m_next_device(parent->m_next_device), m_frame_number(parent->m_frame_number),
+  m_mapper(parent->m_mapper),
+  m_mapper_prg_size_ram(parent->m_mapper_prg_size_ram), m_mapper_prg_size_rom(parent->m_mapper_prg_size_rom),
+  m_mapper_chr_size_ram(parent->m_mapper_chr_size_ram), m_mapper_chr_size_rom(parent->m_mapper_chr_size_rom),
+  m_PRG_ROM(parent->m_PRG_ROM), m_CHR_ROM(parent->m_CHR_ROM),
+  // CPU
+  m_cpu_cycle_count(parent->m_cpu_cycle_count), m_cpu_pcm_cycles(parent->m_cpu_pcm_cycles), m_cpu_current_opcode(parent->m_cpu_current_opcode),
+  m_cpu_state(parent->m_cpu_state), m_cpu_memory_phase(parent->m_cpu_memory_phase),
+  m_cpu_want_nmi(parent->m_cpu_want_nmi), m_cpu_want_irq(parent->m_cpu_want_irq),
+  m_cpu_addressing_mode_state(parent->m_cpu_addressing_mode_state), m_cpu_addressing_mode_cycle(parent->m_cpu_addressing_mode_cycle),
+  m_cpu_execute_cycle(parent->m_cpu_execute_cycle),
+  m_cpu_A(parent->m_cpu_A), m_cpu_X(parent->m_cpu_X), m_cpu_Y(parent->m_cpu_Y), m_cpu_SP(parent->m_cpu_SP), m_cpu_PC(parent->m_cpu_PC),
+  m_cpu_FC(parent->m_cpu_FC), m_cpu_FZ(parent->m_cpu_FZ), m_cpu_FI(parent->m_cpu_FI),
+  m_cpu_FD(parent->m_cpu_FD), m_cpu_FV(parent->m_cpu_FV), m_cpu_FN(parent->m_cpu_FN),
+  m_cpu_last_read(parent->m_cpu_last_read), m_cpu_calc_addr(parent->m_cpu_calc_addr), m_cpu_branch_offset(parent->m_cpu_branch_offset),
+  // Controllers
+  m_controller1_bits(parent->m_controller1_bits), m_controller1_bit_ptr(parent->m_controller1_bit_ptr),
+  m_controller1_strobe(parent->m_controller1_strobe), m_controller1_seqno(parent->m_controller1_seqno),
+  // Address Bus
+  m_cpu_address(parent->m_cpu_address), m_cpu_write_enable(parent->m_cpu_write_enable), m_cpu_data_out(parent->m_cpu_data_out)
 {
     // *** CPU initialization ***
-
-    // null out RAM
-    for (unsigned int i = 0; i < 0x800; ++i) {
-        m_cpu_ram[i] = NULL;
+    // CPU read/write handlers
+    for (unsigned int i = 0; i < 0x10; ++i) {
+        m_cpu_read_handler[i] = parent->m_cpu_read_handler[i];
+        m_cpu_write_handler[i] = parent->m_cpu_write_handler[i];
+        m_cpu_readable[i] = parent->m_cpu_readable[i];
+        m_cpu_writable[i] = parent->m_cpu_writable[i];
+        m_cpu_prg_pointer[i] = parent->m_cpu_prg_pointer[i];
     }
+
+    m_cpu_ram = NULL;
 }
 
 Context::~Context() {
@@ -738,6 +793,25 @@ void Context::cpu_branch(Expression * condition) {
 
 void Context::cpu_execute() {
     switch (m_cpu_current_opcode) {
+    case 0x21: case 0x31: case 0x29: case 0x39: case 0x25: case 0x35: case 0x2D: case 0x3D:
+        // AND
+        /*
+         * A = A & MemGet(CalcAddr)
+         * FZ = (A == 0)
+         * FN = (A >> 7) == 0x01;
+         */
+        switch (m_cpu_execute_cycle) {
+        case 0:
+            cpu_read(m_cpu_calc_addr);
+            break;
+        case 1:
+            m_cpu_A = m.mk_bv_and(get_cpu_A(), m_cpu_last_read);
+            cpu_set_FZ(m_cpu_A);
+            cpu_set_FN(m_cpu_A);
+            instruction_fetch();
+            break;
+        }
+        break;
     case 0x90:
         // BCC
         cpu_branch(m.mk_not(get_cpu_FC()));
@@ -904,34 +978,45 @@ void Context::step_cpu() {
             }
             );
 
-    // CPU steps always start by completing the memory access from the previous step
+    // CPU steps always start by completing the memory access from the previous step,
+    // unless we're starting a context that forked some time after this memory access
+    // (which is probably most of the reason why we're forking at all).
+    // We can't redo this operation because memory accesses can have side effects that we don't
+    // want to repeat. Instead we set a checkpoint for the current context, and if we fork,
+    // the new context can pick up this checkpoint and figure out to resume after the memory phase.
     uint16_t address;
-    // deal with the address right away
-    if (get_cpu_address()->is_concrete()) {
-        address = (uint16_t) (get_cpu_address()->get_value() & 0x0000FFFF);
-        TRACE("cpu_memory", tout << "access memory at " << std::to_string(address) << std::endl;);
-    } else {
-        // oh no. symbolic address.
-        // TODO as soon as I figure out how context forks will work
-        throw "oops, symbolic address in step_cpu()";
-    }
 
-    Expression * data_in = NULL;
-    if (m_cpu_write_enable) {
-        // complete write
-        m_cpu_write_handler[(address >> 12) & 0xF](*this, (address >> 12) & 0xF, (address & 0xFFF), m_cpu_data_out);
-    } else {
-        // complete read by setting data_in
-        Expression * buf = m_cpu_read_handler[(address >> 12) & 0xF](*this, (address >> 12) & 0xF, (address & 0xFFF) );
-        if (buf == NULL) {
-            // bogus read, give all ones
-            data_in = m.mk_byte(0xFF);
-            TRACE("cpu_memory", tout << "read failed" << std::endl;);
+    if (m_cpu_memory_phase) {
+        // deal with the address right away
+        if (get_cpu_address()->is_concrete()) {
+            address = (uint16_t) (get_cpu_address()->get_value() & 0x0000FFFF);
+            TRACE("cpu_memory", tout << "access memory at " << std::to_string(address) << std::endl;);
         } else {
-            data_in = buf;
-            m_cpu_last_read = buf;
-            CTRACE("cpu_memory", data_in->is_concrete(), tout << "read value " << data_in->get_value() << std::endl;);
+            // oh no. symbolic address.
+            // TODO as soon as I figure out how context forks will work
+            throw "oops, symbolic address in step_cpu()";
         }
+
+        if (m_cpu_write_enable) {
+            // complete write
+            m_cpu_write_handler[(address >> 12) & 0xF](*this, (address >> 12) & 0xF, (address & 0xFFF), m_cpu_data_out);
+        } else {
+            // complete read by setting data_in
+            Expression * buf = m_cpu_read_handler[(address >> 12) & 0xF](*this, (address >> 12) & 0xF, (address & 0xFFF) );
+            if (buf == NULL) {
+                // bogus read, give all ones
+                // data_in = m.mk_byte(0xFF);
+                m_cpu_last_read = m.mk_byte(0xFF);
+                TRACE("cpu_memory", tout << "read failed" << std::endl;);
+            } else {
+                // data_in = buf;
+                m_cpu_last_read = buf;
+                CTRACE("cpu_memory", m_cpu_last_read->is_concrete(), tout << "read value " << m_cpu_last_read->get_value() << std::endl;);
+            }
+        }
+        m_cpu_memory_phase = false;
+    } else {
+        TRACE("cpu", tout << "skipping memory phase" << std::endl;);
     }
 
     // now the CPU does something based on the read
@@ -948,10 +1033,10 @@ void Context::step_cpu() {
         cpu_reset(); break;
     case CPU_Decode:
         // check the opcode we just read
-        if (data_in->is_concrete()) {
+        if (m_cpu_last_read->is_concrete()) {
             // do this increment here so that we don't increment it twice if we fork
             increment_PC();
-            m_cpu_current_opcode = (uint8_t)(data_in->get_value() & 0xFF);
+            m_cpu_current_opcode = (uint8_t)(m_cpu_last_read->get_value() & 0xFF);
             TRACE("cpu", tout << "opcode = " << std::to_string(m_cpu_current_opcode) << std::endl;);
             m_cpu_addressing_mode_cycle = 0;
             m_cpu_execute_cycle = 0;
@@ -1010,6 +1095,7 @@ void Context::step_cpu() {
         PRINT_FLAG(get_cpu_FC(), "C", "c");
         tout << std::endl;
         );
+    m_cpu_memory_phase = true;
     m_cpu_cycle_count += 1;
 }
 

@@ -58,20 +58,6 @@ int main(int argc, char *argv[]) {
     // set reset vector = 0xC000 (start of PRG)
     prg_rom[0xFFFC - 0xC000] = 0x00;
     prg_rom[0xFFFD - 0xC000] = 0xC0;
-
-    // LDA #1
-    prg_rom[0xC000 - 0xC000] = 0xA9;
-    prg_rom[0xC001 - 0xC000] = 1;
-    // BNZ +1
-    prg_rom[0xC002 - 0xC000] = 0xD0;
-    prg_rom[0xC003 - 0xC000] = 1;
-    // BRK
-    prg_rom[0xC004 - 0xC000] = 0x00;
-    // LDA #42
-    prg_rom[0xC005 - 0xC000] = 0xA9;
-    prg_rom[0xC006 - 0xC000] = 42;
-
-    /*
     // strobe controllers
     // LDA #1
     prg_rom[0xC000 - 0xC000] = 0xA9;
@@ -93,7 +79,25 @@ int main(int argc, char *argv[]) {
     prg_rom[0xC00B - 0xC000] = 0x16;
     prg_rom[0xC00C - 0xC000] = 0x40;
     // this should give us a symbolic value in A
-     */
+    // AND #$03
+    prg_rom[0xC00D - 0xC000] = 0x29;
+    prg_rom[0xC00E - 0xC000] = 0x03;
+    // CMP #$01 (set FC if we pressed A)
+    prg_rom[0xC00F - 0xC000] = 0xC9;
+    prg_rom[0xC010 - 0xC000] = 0x01;
+    // BCC +2
+    prg_rom[0xC011 - 0xC000] = 0x90;
+    prg_rom[0xC012 - 0xC000] = 2;
+    // (if A was pressed)
+    // LDA #$A5
+    prg_rom[0xC013 - 0xC000] = 0xA9;
+    prg_rom[0xC014 - 0xC000] = 0xA5;
+    // (branch target)
+    // (pad a bunch of NOPs)
+    prg_rom[0xC015 - 0xC000] = 0xEA;
+    prg_rom[0xC016 - 0xC000] = 0xEA;
+    prg_rom[0xC017 - 0xC000] = 0xEA;
+    prg_rom[0xC018 - 0xC000] = 0xEA;
 
     char chr_rom[8192 * chr_pages];
 
@@ -102,7 +106,7 @@ int main(int argc, char *argv[]) {
     initial_context->load_iNES(rom_input);
 
     // set up stopping conditions
-    scheduler.set_maximum_cpu_cycles(7 + 2 + 3 + 2);
+    scheduler.set_maximum_cpu_cycles(7 + 2 + 4 + 2 + 4 + 2 + 2 + 2 + 3 + 2 + 2);
 
     // run scheduler
     try {
