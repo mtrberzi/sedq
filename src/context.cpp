@@ -164,6 +164,7 @@ Context::Context(ASTManager & m, Context * parent)
   // Address Bus
   m_cpu_address(parent->m_cpu_address), m_cpu_write_enable(parent->m_cpu_write_enable), m_cpu_data_out(parent->m_cpu_data_out)
 {
+
     // *** CPU initialization ***
     // CPU read/write handlers
     for (unsigned int i = 0; i < 0x10; ++i) {
@@ -315,6 +316,15 @@ void Context::cpu_write(Expression * address, Expression * data) {
     m_cpu_address = address;
     m_cpu_write_enable = true;
     m_cpu_data_out = data;
+}
+
+void Context::collect_assumptions(std::vector<Expression*> & buffer) {
+    for (std::vector<Expression*>::iterator it = m_symbolic_assumptions.begin(); it != m_symbolic_assumptions.end(); ++it) {
+        buffer.push_back(*it);
+    }
+    if (m_parent_context != NULL) {
+        m_parent_context->collect_assumptions(buffer);
+    }
 }
 
 void Context::step() {
@@ -543,6 +553,12 @@ void Context::instruction_fetch() {
 // returns: true iff the addressing mode allows the current instruction to start executing immediately
 bool Context::decode_addressing_mode() {
 	switch (m_cpu_current_opcode) {
+	case 0x40: case 0x60:
+	case 0x08: case 0x28: case 0x48: case 0x68: case 0x88: case 0xA8: case 0xC8: case 0xE8:
+	case 0x18: case 0x38: case 0x58: case 0x78: case 0x98: case 0xB8: case 0xD8: case 0xF8:
+	case 0x0A: case 0x2A: case 0x4A: case 0x6A: case 0x8A: case 0xAA: case 0xCA: case 0xEA:
+	case 0x1A: case 0x3A: case 0x5A: case 0x7A: case 0x9A: case 0xBA: case 0xDA: case 0xFA:
+	    m_cpu_addressing_mode_state = CPU_AM_IMP; break;
 	case 0x00: case 0x80: case 0xA0: case 0xC0: case 0xE0: case 0x82: case 0xA2: case 0xC2: case 0xE2:
 	case 0x09: case 0x29: case 0x49: case 0x69: case 0x89: case 0xA9: case 0xC9: case 0xE9:
 	case 0x0B: case 0x2B: case 0x4B: case 0x6B: case 0x8B: case 0xAB: case 0xCB: case 0xEB:
@@ -593,6 +609,18 @@ void Context::cpu_set_FZ(Expression * test) {
 
 void Context::cpu_addressing_mode_cycle() {
     switch (m_cpu_addressing_mode_state) {
+    case CPU_AM_IMP:
+        // MemGetCode(PC)
+        switch (m_cpu_addressing_mode_cycle) {
+        case 0:
+            cpu_read(get_cpu_PC());
+            break;
+        case 1:
+            // done
+            m_cpu_state = CPU_Execute;
+            break;
+        }
+        break;
     case CPU_AM_IMM:
         /*
          * CalcAddr = PC
@@ -706,12 +734,36 @@ void Context::cpu_addressing_mode_cycle() {
     m_cpu_addressing_mode_cycle += 1;
 }
 
-void Context::cpu_branch(Expression * condition) {
+void Context::cpu_branch(ECPUStatusFlag testedFlag, bool polarity) {
+    // construct condition
+    Expression * condition;
+    switch (testedFlag) {
+    case CPU_FC:
+        condition = get_cpu_FC();
+        break;
+    case CPU_FN:
+        condition = get_cpu_FN();
+        break;
+    case CPU_FV:
+        condition = get_cpu_FV();
+        break;
+    case CPU_FZ:
+        condition = get_cpu_FZ();
+        break;
+    default:
+        throw "unhandled cpu status flag";
+    }
+
+    if (polarity == false) {
+        condition = m.mk_not(condition);
+    }
+
     if (condition->is_concrete()) {
         if (condition->get_value() != 0) {
             switch (m_cpu_execute_cycle) {
             case 0:
                 // TODO special interrupt ignoring "bug"
+                TRACE("cpu_branch", tout << "branch taken" << std::endl;);
                 cpu_read(get_cpu_PC());
                 break;
             case 1:
@@ -784,10 +836,99 @@ void Context::cpu_branch(Expression * condition) {
                 break;
             } // case 2
             }
+        } else {
+            TRACE("cpu_branch", tout << "branch not taken" << std::endl;);
         }
     } else {
         TRACE("cpu", tout << "symbolic branch: " << condition->to_string() << std::endl;);
-        throw "oops, symbolic branch";
+        std::vector<Expression*> assumptions;
+        collect_assumptions(assumptions);
+        bool branch_condition_can_be_true = false;
+        bool branch_condition_can_be_false = false;
+
+        // check positive condition
+        TRACE("cpu_branch", tout << "checking whether branch condition can be true" << std::endl;);
+        std::vector<Expression*> branch_taken_assertions(assumptions);
+        branch_taken_assertions.push_back(condition);
+        ESolverStatus branch_taken_result = m.call_solver(branch_taken_assertions, NULL);
+        switch (branch_taken_result) {
+        case SAT:
+            TRACE("cpu_branch", tout << "branch condition is satisfiable" << std::endl;);
+            branch_condition_can_be_true = true;
+            break;
+        case UNSAT:
+            TRACE("cpu_branch", tout << "branch condition is unsatisfiable" << std::endl;);
+            break;
+        default:
+            throw "solver error";
+            break;
+        }
+        // check negative condition
+        TRACE("cpu_branch", tout << "checking whether negated branch condition can be true" << std::endl;);
+        std::vector<Expression*> branch_not_taken_assertions(assumptions);
+        branch_not_taken_assertions.push_back(m.mk_not(condition));
+        ESolverStatus branch_not_taken_result = m.call_solver(branch_not_taken_assertions, NULL);
+        switch (branch_not_taken_result) {
+        case SAT:
+            TRACE("cpu_branch", tout << "negated branch condition is satisfiable" << std::endl;);
+            branch_condition_can_be_false = true;
+            break;
+        case UNSAT:
+            TRACE("cpu_branch", tout << "negated branch condition is unsatisfiable" << std::endl;);
+            break;
+        default:
+            throw "solver error";
+            break;
+        }
+
+        if (!branch_condition_can_be_true && !branch_condition_can_be_false) {
+            // TODO mark this context as terminated instead
+            TRACE("cpu_branch", tout << "terminating context -- impossible to take either path of this branch" << std::endl;);
+            m_has_forked = true;
+            return;
+        }
+
+        // one or the other branch is possible
+        if (branch_condition_can_be_true) {
+            Context * branch_taken_context = new Context(get_manager(), this);
+            branch_taken_context->m_symbolic_assumptions.push_back(condition);
+            switch (testedFlag) {
+            case CPU_FC:
+                branch_taken_context->m_cpu_FC = m.mk_bool(polarity);
+                break;
+            case CPU_FN:
+                branch_taken_context->m_cpu_FN = m.mk_bool(polarity);
+                break;
+            case CPU_FV:
+                branch_taken_context->m_cpu_FV = m.mk_bool(polarity);
+                break;
+            case CPU_FZ:
+                branch_taken_context->m_cpu_FZ = m.mk_bool(polarity);
+                break;
+            }
+            get_scheduler().add_context(branch_taken_context);
+        }
+
+        if (branch_condition_can_be_false) {
+            Context * branch_not_taken_context = new Context(get_manager(), this);
+            branch_not_taken_context->m_symbolic_assumptions.push_back(m.mk_not(condition));
+            switch (testedFlag) {
+            case CPU_FC:
+                branch_not_taken_context->m_cpu_FC = m.mk_bool(!polarity);
+                break;
+            case CPU_FN:
+                branch_not_taken_context->m_cpu_FN = m.mk_bool(!polarity);
+                break;
+            case CPU_FV:
+                branch_not_taken_context->m_cpu_FV = m.mk_bool(!polarity);
+                break;
+            case CPU_FZ:
+                branch_not_taken_context->m_cpu_FZ = m.mk_bool(!polarity);
+                break;
+            }
+            get_scheduler().add_context(branch_not_taken_context);
+        }
+        m_has_forked = true;
     }
 }
 
@@ -814,35 +955,35 @@ void Context::cpu_execute() {
         break;
     case 0x90:
         // BCC
-        cpu_branch(m.mk_not(get_cpu_FC()));
+        cpu_branch(CPU_FC, false);
         break;
     case 0xB0:
         // BCS
-        cpu_branch(get_cpu_FC());
+        cpu_branch(CPU_FC, true);
         break;
     case 0xF0:
         // BEQ
-        cpu_branch(get_cpu_FZ());
+        cpu_branch(CPU_FZ, true);
         break;
     case 0x30:
         // BMI
-        cpu_branch(get_cpu_FN());
+        cpu_branch(CPU_FN, true);
         break;
     case 0xD0:
         // BNE
-        cpu_branch(m.mk_not(get_cpu_FZ()));
+        cpu_branch(CPU_FZ, false);
         break;
     case 0x10:
         // BPL
-        cpu_branch(m.mk_not(get_cpu_FN()));
+        cpu_branch(CPU_FN, false);
         break;
     case 0x50:
         // BVC
-        cpu_branch(m.mk_not(get_cpu_FV()));
+        cpu_branch(CPU_FV, false);
         break;
     case 0x70:
         // BVS
-        cpu_branch(get_cpu_FV());
+        cpu_branch(CPU_FV, true);
         break;
     case 0xC1: case 0xD1: case 0xC9: case 0xD9: case 0xC5: case 0xD5: case 0xCD: case 0xDD:
         // CMP
@@ -921,6 +1062,10 @@ void Context::cpu_execute() {
             instruction_fetch();
             break;
         }
+        break;
+    case 0xEA:
+        // NOP
+        instruction_fetch();
         break;
     case 0x81: case 0x91: case 0x99: case 0x85: case 0x95: case 0x8D: case 0x9D:
         // STA

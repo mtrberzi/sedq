@@ -42,6 +42,11 @@ enum ECPUAddressingMode {
 	CPU_AM_INY, CPU_AM_INYW, CPU_AM_NON
 };
 
+// enum to track which flag we are branching on
+enum ECPUStatusFlag {
+    CPU_FC, CPU_FZ, CPU_FN, CPU_FV
+};
+
 class Context {
 public:
     // create "reset" context
@@ -104,6 +109,9 @@ protected:
     Context * m_parent_context;
     bool m_has_forked;
 
+    std::vector<Expression*> m_symbolic_assumptions;
+    void collect_assumptions(std::vector<Expression*> & buffer);
+
     uint64_t m_step_count;
 
     EDevice m_next_device;
@@ -144,7 +152,7 @@ protected:
     Expression * m_cpu_branch_offset;
     void cpu_addressing_mode_cycle();
     void cpu_execute();
-    void cpu_branch(Expression * condition);
+    void cpu_branch(ECPUStatusFlag testedFlag, bool polarity);
 
     void increment_PC();
 

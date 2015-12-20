@@ -587,8 +587,7 @@ Expression * ASTManager_SMT2::mk_bv_signed_greater_than_or_equal(Expression * ar
     return new BinaryOp("bvsge", (SMT2Expression*)arg0, (SMT2Expression*)arg1);
 }
 
-ESolverStatus ASTManager_SMT2::call_solver(Expression ** assertions, unsigned int nAssertions, Model ** model) {
-    SMT2Expression** smt2assertions = (SMT2Expression**)assertions;
+ESolverStatus ASTManager_SMT2::call_solver(std::vector<Expression*> & assertions, Model ** model) {
     std::string instance;
 
     // start with the usual boilerplate
@@ -597,8 +596,9 @@ ESolverStatus ASTManager_SMT2::call_solver(Expression ** assertions, unsigned in
     // now declare all variables
     std::map<std::string, SMT2Expression*> variables;
 
-    for (unsigned int i = 0; i < nAssertions; ++i) {
-        smt2assertions[i]->collect_variables(variables);
+    for (std::vector<Expression*>::iterator it = assertions.begin(); it != assertions.end(); ++it) {
+        SMT2Expression * expr = (SMT2Expression*)*it;
+        expr->collect_variables(variables);
     }
 
     for (std::map<std::string, SMT2Expression*>::iterator it = variables.begin(); it != variables.end(); ++it) {
@@ -608,8 +608,8 @@ ESolverStatus ASTManager_SMT2::call_solver(Expression ** assertions, unsigned in
     }
 
     // turn every expression into an assertion
-    for (unsigned int i = 0; i < nAssertions; ++i) {
-        instance += ((SMT2Expression*)mk_assert(smt2assertions[i]))->to_string();
+    for (std::vector<Expression*>::iterator it = assertions.begin(); it != assertions.end(); ++it) {
+        instance += ((SMT2Expression*)mk_assert(*it))->to_string();
         instance += "\n";
     }
 
