@@ -934,6 +934,7 @@ void Context::cpu_branch(ECPUStatusFlag testedFlag, bool polarity) {
 
 void Context::cpu_execute() {
     switch (m_cpu_current_opcode) {
+    // TODO ADC
     case 0x21: case 0x31: case 0x29: case 0x39: case 0x25: case 0x35: case 0x2D: case 0x3D:
         // AND
         /*
@@ -953,6 +954,7 @@ void Context::cpu_execute() {
             break;
         }
         break;
+    // TODO ASL
     case 0x90:
         // BCC
         cpu_branch(CPU_FC, false);
@@ -965,6 +967,7 @@ void Context::cpu_execute() {
         // BEQ
         cpu_branch(CPU_FZ, true);
         break;
+    // TODO BIT
     case 0x30:
         // BMI
         cpu_branch(CPU_FN, true);
@@ -977,6 +980,7 @@ void Context::cpu_execute() {
         // BPL
         cpu_branch(CPU_FN, false);
         break;
+    // TODO BRK
     case 0x50:
         // BVC
         cpu_branch(CPU_FV, false);
@@ -985,6 +989,10 @@ void Context::cpu_execute() {
         // BVS
         cpu_branch(CPU_FV, true);
         break;
+    // TODO CLC
+    // TODO CLD
+    // TODO CLI
+    // TODO CLV
     case 0xC1: case 0xD1: case 0xC9: case 0xD9: case 0xC5: case 0xD5: case 0xCD: case 0xDD:
         // CMP
         /*
@@ -1006,6 +1014,16 @@ void Context::cpu_execute() {
             break;
         }
         break;
+    // TODO CPX
+    // TODO CPY
+    // TODO DEX
+    // TODO DEY
+    // TODO EOR
+    // TODO INC
+    // TODO INX
+    // TODO INY
+    // TODO JMP
+    // TODO JSR
     case 0xA1: case 0xB1: case 0xA9: case 0xB9: case 0xA5: case 0xB5: case 0xAD: case 0xBD:
         // LDA
         /*
@@ -1063,10 +1081,24 @@ void Context::cpu_execute() {
             break;
         }
         break;
+    // TODO LSR
     case 0xEA:
         // NOP
         instruction_fetch();
         break;
+    // TODO ORA
+    // TODO PHA
+    // TODO PHP
+    // TODO PLA
+    // TODO PLP
+    // TODO ROL
+    // TODO ROR
+    // TODO RTI
+    // TODO RTS
+    // TODO SBC
+    // TODO SEC
+    // TODO SED
+    // TODO SEI
     case 0x81: case 0x91: case 0x99: case 0x85: case 0x95: case 0x8D: case 0x9D:
         // STA
         /*
@@ -1103,6 +1135,12 @@ void Context::cpu_execute() {
             break;
         }
         break;
+    // TODO TAX
+    // TODO TAY
+    // TODO TSX
+    // TODO TXA
+    // TODO TXS
+    // TODO TYA
     default:
         TRACE("cpu", tout << "unimplemented instruction " << std::to_string(m_cpu_current_opcode) << std::endl;);
         throw "oops, unimplemented instruction";
