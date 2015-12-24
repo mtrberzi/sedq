@@ -989,10 +989,26 @@ void Context::cpu_execute() {
         // BVS
         cpu_branch(CPU_FV, true);
         break;
-    // TODO CLC
-    // TODO CLD
-    // TODO CLI
-    // TODO CLV
+    case 0x18:
+        // CLC
+        m_cpu_FC = m.mk_bool(false);
+        instruction_fetch();
+        break;
+    case 0xD8:
+        // CLD
+        m_cpu_FD = m.mk_bool(false);
+        instruction_fetch();
+        break;
+    case 0x58:
+        // CLI
+        m_cpu_FI = m.mk_bool(false);
+        instruction_fetch();
+        break;
+    case 0xB8:
+        // CLV
+        m_cpu_FV = m.mk_bool(false);
+        instruction_fetch();
+        break;
     case 0xC1: case 0xD1: case 0xC9: case 0xD9: case 0xC5: case 0xD5: case 0xCD: case 0xDD:
         // CMP
         /*
@@ -1014,14 +1030,99 @@ void Context::cpu_execute() {
             break;
         }
         break;
-    // TODO CPX
-    // TODO CPY
-    // TODO DEX
-    // TODO DEY
+    case 0xE0: case 0xE4: case 0xEC:
+        // CPX
+        /*
+         * result = X - MemGet(CalcAddr)
+         * FC = (result >= 0)
+         * FZ = (result == 0)
+         * FN = (result >> 7) == 0x01
+         */
+        switch (m_cpu_execute_cycle) {
+        case 0:
+            cpu_read(m_cpu_calc_addr);
+            break;
+        case 1:
+            Expression * result = m.mk_bv_sub(get_cpu_X(), m_cpu_last_read);
+            cpu_set_FC(result);
+            cpu_set_FN(result);
+            cpu_set_FZ(result);
+            instruction_fetch();
+            break;
+        }
+        break;
+    case 0xC0: case 0xC4: case 0xCC:
+        // CPY
+        /*
+         * result = Y - MemGet(CalcAddr)
+         * FC = (result >= 0)
+         * FZ = (result == 0)
+         * FN = (result >> 7) == 0x01
+         */
+        switch (m_cpu_execute_cycle) {
+        case 0:
+            cpu_read(m_cpu_calc_addr);
+            break;
+        case 1:
+            Expression * result = m.mk_bv_sub(get_cpu_Y(), m_cpu_last_read);
+            cpu_set_FC(result);
+            cpu_set_FN(result);
+            cpu_set_FZ(result);
+            instruction_fetch();
+            break;
+        }
+        break;
+    // TODO DEC
+    case 0xCA:
+        // DEX
+        /*
+         * X = X - 1
+         * FZ = (X == 0)
+         * FN = (X >> 7) == 0x01
+         */
+        m_cpu_X = m.mk_bv_sub(get_cpu_X(), m.mk_byte(1));
+        cpu_set_FN(m_cpu_X);
+        cpu_set_FZ(m_cpu_X);
+        instruction_fetch();
+        break;
+    case 0x88:
+        // DEY
+        /*
+         * Y = Y - 1
+         * FZ = (Y == 0)
+         * FN = (Y >> 7) == 0x01
+         */
+        m_cpu_Y = m.mk_bv_sub(get_cpu_Y(), m.mk_byte(1));
+        cpu_set_FN(m_cpu_Y);
+        cpu_set_FZ(m_cpu_Y);
+        instruction_fetch();
+        break;
     // TODO EOR
     // TODO INC
-    // TODO INX
-    // TODO INY
+    case 0xE8:
+        // INX
+        /*
+         * X = X + 1
+         * FZ = (X == 0)
+         * FN = (X >> 7) == 0x01
+         */
+        m_cpu_X = m.mk_bv_add(get_cpu_X(), m.mk_byte(1));
+        cpu_set_FN(m_cpu_X);
+        cpu_set_FZ(m_cpu_X);
+        instruction_fetch();
+        break;
+    case 0xC8:
+        // INY
+        /*
+         * Y = Y + 1
+         * FZ = (Y == 0)
+         * FN = (Y >> 7) == 0x01
+         */
+        m_cpu_Y = m.mk_bv_add(get_cpu_Y(), m.mk_byte(1));
+        cpu_set_FN(m_cpu_Y);
+        cpu_set_FZ(m_cpu_Y);
+        instruction_fetch();
+        break;
     // TODO JMP
     // TODO JSR
     case 0xA1: case 0xB1: case 0xA9: case 0xB9: case 0xA5: case 0xB5: case 0xAD: case 0xBD:
@@ -1096,9 +1197,21 @@ void Context::cpu_execute() {
     // TODO RTI
     // TODO RTS
     // TODO SBC
-    // TODO SEC
-    // TODO SED
-    // TODO SEI
+    case 0x38:
+        // SEC
+        m_cpu_FC = m.mk_bool(true);
+        instruction_fetch();
+        break;
+    case 0xF8:
+        // SED
+        m_cpu_FD = m.mk_bool(true);
+        instruction_fetch();
+        break;
+    case 0x78:
+        // SEI
+        m_cpu_FI = m.mk_bool(true);
+        instruction_fetch();
+        break;
     case 0x81: case 0x91: case 0x99: case 0x85: case 0x95: case 0x8D: case 0x9D:
         // STA
         /*
@@ -1135,12 +1248,48 @@ void Context::cpu_execute() {
             break;
         }
         break;
-    // TODO TAX
-    // TODO TAY
-    // TODO TSX
-    // TODO TXA
-    // TODO TXS
-    // TODO TYA
+    case 0xAA:
+        // TAX
+        m_cpu_X = get_cpu_A();
+        cpu_set_FN(m_cpu_X);
+        cpu_set_FZ(m_cpu_X);
+        instruction_fetch();
+        break;
+    case 0xA8:
+        // TAY
+        m_cpu_Y = get_cpu_A();
+        cpu_set_FN(m_cpu_Y);
+        cpu_set_FZ(m_cpu_Y);
+        instruction_fetch();
+        break;
+    case 0xBA:
+        // TSX
+        m_cpu_X = get_cpu_SP();
+        cpu_set_FN(m_cpu_X);
+        cpu_set_FZ(m_cpu_X);
+        instruction_fetch();
+        break;
+    case 0x8A:
+        // TXA
+        m_cpu_A = get_cpu_X();
+        cpu_set_FN(m_cpu_A);
+        cpu_set_FZ(m_cpu_A);
+        instruction_fetch();
+        break;
+    case 0x9A:
+        // TXS
+        m_cpu_SP = get_cpu_X();
+        cpu_set_FN(m_cpu_SP);
+        cpu_set_FZ(m_cpu_SP);
+        instruction_fetch();
+        break;
+    case 0x98:
+        // TYA
+        m_cpu_A = get_cpu_Y();
+        cpu_set_FN(m_cpu_A);
+        cpu_set_FZ(m_cpu_A);
+        instruction_fetch();
+        break;
     default:
         TRACE("cpu", tout << "unimplemented instruction " << std::to_string(m_cpu_current_opcode) << std::endl;);
         throw "oops, unimplemented instruction";
